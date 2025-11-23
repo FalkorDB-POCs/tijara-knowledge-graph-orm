@@ -1,0 +1,392 @@
+# Tijara Knowledge Graph Ontology Schema
+# Based on LDC commodity trading domain
+
+# Core Concepts (Abstract Types)
+concepts:
+  Commodity:
+    description: "Agricultural commodities traded by LDC"
+    properties:
+      - name
+      - category
+      - standard_unit
+    subconcepts:
+      - Grain
+      - Oilseed
+      - Soft
+    
+  Geography:
+    description: "Geographic entities from global to local"
+    properties:
+      - name
+      - code
+      - geometry
+      - parent_id
+    subconcepts:
+      - Country
+      - Region
+      - TradeZone
+      - Port
+    
+  Indicator:
+    description: "Measurable data points"
+    properties:
+      - name
+      - unit
+      - frequency
+      - source
+    subconcepts:
+      - ProductionIndicator
+      - DemandIndicator
+      - MacroIndicator
+      - ClimateIndicator
+      
+  Ticker:
+    description: "Time series and price data"
+    properties:
+      - symbol
+      - frequency
+      - currency
+      - unit
+    subconcepts:
+      - PriceSeries
+      - FuturesContract
+      - Premium
+      - Basis
+
+# Specific Commodity Types
+commodities:
+  grains:
+    - Wheat:
+        varieties: [RedHardWheat, SoftWheat, Durum]
+        units: [bushel, metric_ton]
+    - Corn:
+        varieties: [YellowCorn, WhiteCorn]
+        units: [bushel, metric_ton]
+    - Rice:
+        varieties: [LongGrain, ShortGrain, Basmati]
+        units: [cwt, metric_ton]
+        
+  oilseeds:
+    - Soybean:
+        varieties: [GMO, NonGMO, Organic]
+        units: [bushel, metric_ton]
+    - Canola:
+        varieties: [Standard, HighOleic]
+        units: [metric_ton]
+    - Sunflower:
+        varieties: [HighOleic, Standard]
+        units: [metric_ton]
+        
+  softs:
+    - Cotton:
+        varieties: [Upland, Pima]
+        units: [bale, metric_ton]
+    - Coffee:
+        varieties: [Arabica, Robusta]
+        units: [bag, metric_ton]
+
+# Geographic Entities
+geographies:
+  trade_zones:
+    - NorthAmerica:
+        countries: [USA, Canada, Mexico]
+    - SouthAmerica:
+        countries: [Brazil, Argentina, Paraguay, Uruguay]
+    - Europe:
+        countries: [Germany, France, Netherlands, Poland, Romania]
+    - Asia:
+        countries: [China, India, Indonesia, Thailand, Vietnam]
+    - Africa:
+        countries: [Egypt, Morocco, South Africa, Nigeria]
+        
+  key_regions:
+    - USA:
+        regions: [CornBelt, GreatPlains, PacificNorthwest]
+        states: [Iowa, Illinois, Indiana, Ohio, Nebraska, Kansas]
+    - Brazil:
+        regions: [CenterWest, South, Northeast]
+        states: [MatoGrosso, Parana, RioGrandeDoSul]
+    - China:
+        regions: [Northeast, NorthChina, YangtzeRiver]
+
+# Indicator Types
+indicators:
+  production:
+    - Production:
+        unit: metric_ton
+        frequency: annual
+    - Yield:
+        unit: ton_per_hectare
+        frequency: annual
+    - PlantedArea:
+        unit: hectare
+        frequency: annual
+    - HarvestedArea:
+        unit: hectare
+        frequency: annual
+        
+  demand:
+    - Consumption:
+        unit: metric_ton
+        frequency: annual
+    - FoodUse:
+        unit: metric_ton
+        frequency: annual
+    - FeedUse:
+        unit: metric_ton
+        frequency: annual
+    - IndustrialUse:
+        unit: metric_ton
+        frequency: annual
+    - Stocks:
+        unit: metric_ton
+        frequency: quarterly
+        
+  trade:
+    - Exports:
+        unit: metric_ton
+        frequency: monthly
+    - Imports:
+        unit: metric_ton
+        frequency: monthly
+    - TradeVolume:
+        unit: metric_ton
+        frequency: monthly
+        
+  macro:
+    - Population:
+        unit: count
+        frequency: annual
+    - GDP:
+        unit: usd
+        frequency: quarterly
+    - InterestRate:
+        unit: percent
+        frequency: monthly
+    - ExchangeRate:
+        unit: ratio
+        frequency: daily
+    - Inflation:
+        unit: percent
+        frequency: monthly
+        
+  climate:
+    - Temperature:
+        unit: celsius
+        frequency: daily
+    - Precipitation:
+        unit: millimeter
+        frequency: daily
+    - DroughtIndex:
+        unit: index
+        frequency: weekly
+    - SoilMoisture:
+        unit: percent
+        frequency: weekly
+
+# Price Tickers
+tickers:
+  futures:
+    - CME_CORN:
+        exchange: CME
+        commodity: Corn
+        unit: bushel
+        currency: USD
+    - CME_WHEAT:
+        exchange: CME
+        commodity: Wheat
+        unit: bushel
+        currency: USD
+    - CME_SOYBEAN:
+        exchange: CME
+        commodity: Soybean
+        unit: bushel
+        currency: USD
+    - EURONEXT_WHEAT:
+        exchange: Euronext
+        commodity: Wheat
+        unit: metric_ton
+        currency: EUR
+        
+  physical:
+    - FOB_US_GULF:
+        location: USGulf
+        price_type: FOB
+        currency: USD
+    - CIF_CHINA:
+        location: China
+        price_type: CIF
+        currency: USD
+    - FOB_BRAZIL:
+        location: Brazil
+        price_type: FOB
+        currency: USD
+        
+  basis_premium:
+    - US_CORN_BASIS:
+        description: "Local price vs CME futures"
+    - BRAZIL_SOYBEAN_PREMIUM:
+        description: "FOB premium over CBOT"
+
+# Relationship Types
+relationships:
+  # Ontological relationships
+  - name: subclass_of
+    description: "Concept hierarchy"
+    source: Concept
+    target: Concept
+    
+  - name: is_a
+    description: "Instance of concept"
+    source: Entity
+    target: Concept
+    
+  # Commodity relationships
+  - name: has_commodity
+    description: "Links entity to commodity"
+    source: Entity
+    target: Commodity
+    properties: [variety]
+    
+  - name: variety_of
+    description: "Commodity variety relationship"
+    source: Commodity
+    target: Commodity
+    
+  # Geographic relationships
+  - name: has_geography
+    description: "Geographic association"
+    source: Entity
+    target: Geography
+    
+  - name: child_of
+    description: "Geographic hierarchy"
+    source: Geography
+    target: Geography
+    
+  - name: has_geometry
+    description: "Spatial geometry"
+    source: Geography
+    target: Geometry
+    properties: [geometry_type, coordinates]
+    
+  # Indicator relationships
+  - name: has_indicator
+    description: "Indicator type"
+    source: Entity
+    target: Indicator
+    
+  - name: has_unit
+    description: "Unit of measurement"
+    source: Entity
+    target: Unit
+    
+  # Trade relationships
+  - name: has_exporter
+    description: "Export origin"
+    source: Tradeflow
+    target: Geography
+    
+  - name: has_importer
+    description: "Import destination"
+    source: Tradeflow
+    target: Geography
+    
+  # Price relationships
+  - name: has_price
+    description: "Price reference"
+    source: Entity
+    target: Ticker
+    
+  - name: has_basis
+    description: "Basis relationship"
+    source: Ticker
+    target: Ticker
+    properties: [differential]
+    
+  # Data relationships
+  - name: has_source
+    description: "Data provenance"
+    source: Entity
+    target: DataSource
+    properties: [source_name, ingestion_date]
+    
+  - name: derived_from
+    description: "Calculated/derived data"
+    source: Entity
+    target: Entity
+    properties: [calculation_method]
+    
+  # Temporal relationships
+  - name: precedes
+    description: "Temporal sequence"
+    source: TimeSeries
+    target: TimeSeries
+    
+  - name: concurrent_with
+    description: "Same time period"
+    source: TimeSeries
+    target: TimeSeries
+    
+# Data Sources
+data_sources:
+  - name: USDA
+    description: "US Department of Agriculture"
+    types: [Production, Trade, Stocks]
+    update_frequency: weekly
+    
+  - name: MARS
+    description: "EU Crop Monitoring"
+    types: [Yield, Weather, CropCondition]
+    update_frequency: weekly
+    
+  - name: SnD
+    description: "LDC Supply & Demand Database"
+    types: [Production, Consumption, Trade]
+    update_frequency: daily
+    
+  - name: Tradeflows
+    description: "Global trade data"
+    types: [Imports, Exports, Tariffs]
+    update_frequency: monthly
+    
+  - name: CADI
+    description: "LDC internal database"
+    types: [Prices, Contracts, Positions]
+    update_frequency: real-time
+    
+  - name: CropMonitor
+    description: "Weather and crop monitoring"
+    types: [Weather, Yield, CropHealth]
+    update_frequency: daily
+    
+  - name: CME
+    description: "Chicago Mercantile Exchange"
+    types: [Futures, Options]
+    update_frequency: real-time
+
+# Metadata Schema
+metadata:
+  entity_metadata:
+    - ingestion_timestamp
+    - last_updated
+    - data_source
+    - validity_start
+    - validity_end
+    - version
+    - quality_score
+    - is_active
+    
+  relationship_metadata:
+    - created_at
+    - confidence_score
+    - evidence
+    - created_by
+
+# Constraints and Validation Rules
+constraints:
+  - rule: "Every Entity must have at least one has_source relationship"
+  - rule: "Production indicators must have has_geography and has_commodity"
+  - rule: "Tradeflows must have both has_exporter and has_importer"
+  - rule: "Tickers must have has_unit and currency specified"
+  - rule: "Geographic entities in hierarchy must be acyclic"

@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tijara Knowledge Graph - LDC Commodity Intelligence</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
+    <link rel="alternate icon" href="static/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="static/css/styles.css">
+    <!-- Dynamic theme will be loaded by theme-switcher.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Theme Switcher - Loads dataset-specific theme -->
+    <script src="static/js/theme-switcher.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-project-diagram"></i>
+                    <h1>Tijara Knowledge Graph <span style="font-size: 0.6em; color: var(--accent-color); font-weight: normal;">(ORM)</span></h1>
+                </div>
+                <div class="header-info">
+                    <div class="status-indicators">
+                        <div class="status-item" title="FalkorDB Graph Database with ORM Layer">
+                            <i class="fas fa-database"></i>
+                            <span class="status-dot" id="falkordbDot"></span>
+                            <span id="falkordbText">FalkorDB (ORM)</span>
+                        </div>
+                        <div class="status-item" title="Graphiti AI (OpenAI)">
+                            <i class="fas fa-brain"></i>
+                            <span class="status-dot" id="graphitiDot"></span>
+                            <span id="graphitiText">Graphiti</span>
+                        </div>
+                    </div>
+                    <button class="btn-icon" id="settingsBtn" title="Settings">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="copilot">
+                    <i class="fas fa-robot"></i>
+                    <span>Trading Copilot</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="analytics">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Data Analytics</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="ingestion">
+                    <i class="fas fa-upload"></i>
+                    <span>Data Ingestion</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="impact">
+                    <i class="fas fa-globe"></i>
+                    <span>Impact Analysis</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="discovery">
+                    <i class="fas fa-search"></i>
+                    <span>Data Discovery</span>
+                </a>
+                <div class="nav-divider"></div>
+                <a href="#" class="nav-item" data-tab="schema">
+                    <i class="fas fa-sitemap"></i>
+                    <span>Schema Explorer</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="stats">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Statistics</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            <!-- Tab 1: Trading Copilot -->
+            <div class="tab-content active" id="copilot">
+                <div class="page-header">
+                    <h2><i class="fas fa-robot"></i> Trading Copilot</h2>
+                    <p>Ask questions about commodity markets in natural language</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Quick Questions</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-questions">
+                            <button class="quick-question-btn" data-question="What countries are in the LDC system?">
+                                What countries are in the LDC system?
+                            </button>
+                            <button class="quick-question-btn" data-question="What commodities does France export to the United States?">
+                                What commodities does France export to the United States?
+                            </button>
+                            <button class="quick-question-btn" data-question="What commodities does USA export to France?">
+                                What commodities does USA export to France?
+                            </button>
+                            <button class="quick-question-btn" data-question="What balance sheets are available in the system?">
+                                What balance sheets are available in the system?
+                            </button>
+                            <button class="quick-question-btn" data-question="What weather indicators are tracked for production areas?">
+                                What weather indicators are tracked for production areas?
+                            </button>
+                            <button class="quick-question-btn" data-question="Which commodities have production areas in France and USA?">
+                                Which commodities have production areas in France and USA?
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Chat Conversation</h3>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <label class="checkbox-label" style="margin: 0;">
+                                <input type="checkbox" id="returnSources" checked>
+                                <span style="font-size: 0.875rem;">Show sources</span>
+                            </label>
+                            <button class="btn btn-sm btn-secondary" id="clearChatBtn" title="Clear conversation">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <!-- Chat Messages Container -->
+                        <div id="chatMessages" style="
+                            max-height: 500px;
+                            overflow-y: auto;
+                            padding: 1rem;
+                            background: var(--bg-secondary);
+                            border-bottom: 1px solid var(--border-color);
+                        ">
+                            <div class="chat-message system-message">
+                                <i class="fas fa-robot"></i>
+                                <div class="message-content">
+                                    <strong>Trading Copilot</strong>
+                                    <p>Hello! I'm your LDC Trading Copilot powered by ORM (Object-Relational Mapping). Ask me anything about commodities, markets, trade flows, or production data.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Chat Input -->
+                        <div style="padding: 1rem;">
+                            <div class="loader" id="copilotLoader" style="display: none; margin-bottom: 1rem;">
+                                <div class="spinner"></div>
+                                <p>Processing your question...</p>
+                            </div>
+                            <div class="query-input-container">
+                                <textarea 
+                                    id="copilotQuery" 
+                                    class="query-input" 
+                                    placeholder="Type your question here and press Enter or click Send..."
+                                    rows="2"
+                                    style="margin-bottom: 0.5rem;"
+                                ></textarea>
+                                <div class="input-actions">
+                                    <button class="btn btn-primary" id="askBtn">
+                                        <i class="fas fa-paper-plane"></i> Send
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Data Analytics -->
+            <div class="tab-content" id="analytics">
+                <div class="page-header">
+                    <h2><i class="fas fa-chart-line"></i> Data Analytics</h2>
+                    <p>Run graph algorithms and extract dimensional data</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Graph Algorithms</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Quick Analytics (Direct Cypher Queries)</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (c:Commodity)&#10;RETURN c.name as commodity, labels(c) as types&#10;ORDER BY c.name'>
+                                    List All Commodities
+                                </button>
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (g:Geography:Country)&#10;RETURN g.name as country, g.gid_code as code&#10;ORDER BY g.name'>
+                                    List Countries
+                                </button>
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (g1:Geography)-[t:TRADES_WITH]->(g2:Geography)&#10;RETURN g1.name as from, g2.name as to, t.commodity as commodity, t.flow_type&#10;ORDER BY g1.name, g2.name'>
+                                    Trade Flows Between Countries
+                                </button>
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (pa:ProductionArea)-[:PRODUCES]->(c:Commodity)&#10;RETURN pa.name as production_area, c.name as commodity&#10;ORDER BY pa.name'>
+                                    Production Areas by Commodity
+                                </button>
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (bs:BalanceSheet)-[:FOR_COMMODITY]->(c:Commodity)&#10;MATCH (bs)-[:FOR_GEOGRAPHY]->(g:Geography)&#10;RETURN bs.balance_sheet_id as id, c.name as commodity, g.name as geography&#10;LIMIT 20'>
+                                    Balance Sheets
+                                </button>
+                                <button class="btn btn-sm btn-secondary quick-analytics-btn" data-query='MATCH (n)&#10;RETURN DISTINCT labels(n) as node_type, count(n) as count&#10;ORDER BY count DESC'>
+                                    Node Distribution
+                                </button>
+                            </div>
+                            <div style="margin-top: 0.5rem;">
+                                <small class="form-hint">
+                                    <strong>Quick Parameter Templates:</strong>
+                                    <button class="btn btn-xs btn-info" id="fillPageRankParams" style="margin-left: 0.5rem;">Fill Trade Network PageRank</button>
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Algorithm</label>
+                                <select id="algorithmSelect" class="form-control">
+                                    <option value="pagerank">PageRank (Importance)</option>
+                                    <option value="centrality">Centrality Analysis</option>
+                                    <option value="community">Community Detection</option>
+                                    <option value="pathfinding">Path Finding</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Parameters (JSON)</label>
+                            <textarea 
+                                id="analyticsParameters" 
+                                class="form-control code-input"
+                                placeholder='{"node_label": "Geography", "relationship_type": "TRADES_WITH"}'
+                                rows="3"
+                            ></textarea>
+                            <small class="form-hint">
+                                Algorithm-specific parameters. <strong>Pathfinding requires: source, target node IDs.</strong>
+                                Use "Node Distribution" query above to find node IDs.
+                            </small>
+                        </div>
+
+                        <button class="btn btn-primary" id="runAnalyticsBtn">
+                            <i class="fas fa-play"></i> Run Analysis
+                        </button>
+
+                        <div class="result-container" id="analyticsResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-chart-bar"></i> Results</h4>
+                                <button class="btn btn-sm btn-secondary" id="exportAnalyticsBtn">
+                                    <i class="fas fa-download"></i> Export CSV
+                                </button>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table" id="analyticsTable">
+                                    <thead id="analyticsTableHead"></thead>
+                                    <tbody id="analyticsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="loader" id="analyticsLoader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Running analysis...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Node ID Finder (for Pathfinding)</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="form-hint">
+                            <i class="fas fa-info-circle"></i> Find node IDs to use with pathfinding algorithms. Search by name, type, or properties.
+                        </p>
+                        
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Node Type</label>
+                                <select id="nodeFinderType" class="form-control">
+                                    <option value="Geography">Geography (Countries, Regions)</option>
+                                    <option value="Commodity">Commodity</option>
+                                    <option value="ProductionArea">Production Area</option>
+                                    <option value="BalanceSheet">Balance Sheet</option>
+                                    <option value="Indicator">Weather Indicator</option>
+                                    <option value="all">All Node Types</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Search Term (optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="nodeFinderSearch" 
+                                    class="form-control"
+                                    placeholder="e.g., France, Wheat, or leave empty for all"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Additional Filters (JSON, optional)</label>
+                            <textarea 
+                                id="nodeFinderFilters" 
+                                class="form-control code-input"
+                                placeholder='{"level": 0}  // For countries only'
+                                rows="2"
+                            ></textarea>
+                            <small class="form-hint">
+                                Examples: <code>{"level": 0}</code> for countries, <code>{"gid_code": "FRA"}</code> for specific code
+                            </small>
+                        </div>
+
+                        <button class="btn btn-primary" id="findNodesBtn">
+                            <i class="fas fa-search"></i> Find Nodes
+                        </button>
+
+                        <div class="result-container" id="nodeFinderResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-list"></i> Found Nodes</h4>
+                                <button class="btn btn-sm btn-secondary" id="copyNodeIdsBtn">
+                                    <i class="fas fa-copy"></i> Copy All IDs
+                                </button>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table" id="nodeFinderTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Node ID</th>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Properties</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="nodeFinderTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="loader" id="nodeFinderLoader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Searching nodes...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Extract Dimensional Data</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Entity Type</label>
+                                <select id="entityTypeSelect" class="form-control">
+                                    <option value="Geography">Geography</option>
+                                    <option value="Commodity">Commodity</option>
+                                    <option value="ProductionArea">Production Area</option>
+                                    <option value="BalanceSheet">Balance Sheet</option>
+                                    <option value="Indicator">Weather Indicator</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Dimensions</label>
+                                <input 
+                                    type="text" 
+                                    id="dimensionsInput" 
+                                    class="form-control"
+                                    placeholder="name, gid_code, level"
+                                    value="name, gid_code, level"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Filters (JSON)</label>
+                            <textarea 
+                                id="extractFilters" 
+                                class="form-control code-input"
+                                placeholder='{"name": "France"}'
+                                rows="2"
+                            ></textarea>
+                            <small class="form-hint">
+                                For Geography: Use properties like "name", "gid_code", "level"<br>
+                                For Commodity: Use "name" property<br>
+                                For Trade flows: Run Cypher query directly above
+                            </small>
+                        </div>
+
+                        <button class="btn btn-primary" id="extractBtn">
+                            <i class="fas fa-table"></i> Extract Data
+                        </button>
+
+                        <div class="result-container" id="extractResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-database"></i> Extracted Data</h4>
+                                <button class="btn btn-sm btn-secondary" id="exportExtractBtn">
+                                    <i class="fas fa-download"></i> Export CSV
+                                </button>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table" id="extractTable">
+                                    <thead id="extractTableHead"></thead>
+                                    <tbody id="extractTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Data Ingestion -->
+            <div class="tab-content" id="ingestion">
+                <div class="page-header">
+                    <h2><i class="fas fa-upload"></i> Data Ingestion</h2>
+                    <p>Import data with automatic semantic placement</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Ingest New Data</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Sample CSV Datasets (LDC Format)</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-sm btn-secondary sample-data-btn" data-sample="commodity_hierarchy">
+                                    <i class="fas fa-sitemap"></i> Commodity Hierarchy CSV
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-data-btn" data-sample="trade_flows">
+                                    <i class="fas fa-exchange-alt"></i> Trade Flows CSV
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-data-btn" data-sample="balance_sheet">
+                                    <i class="fas fa-table"></i> Balance Sheet CSV
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-data-btn" data-sample="production_areas">
+                                    <i class="fas fa-map-marked-alt"></i> Production Areas CSV
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-data-btn" data-sample="geometries">
+                                    <i class="fas fa-globe"></i> Geometries CSV
+                                </button>
+                            </div>
+                            <small class="form-hint">
+                                <i class="fas fa-info-circle"></i> These CSV formats match the LDC input files structure. Upload similar CSV files to add data.
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>CSV Content or JSON Data</label>
+                            <textarea 
+                                id="dataInput" 
+                                class="form-control code-input"
+                                rows="8"
+                                placeholder='CSV Format (paste directly):
+source_country,destination_country,commodity,commodity_season
+FRA,USA,Common Wheat,
+USA,FRA,Yellow Corn,
+
+OR JSON Format:
+[{"source_country": "FRA", "destination_country": "USA", "commodity": "Common Wheat"}]'
+                            ></textarea>
+                            <small class="form-hint">
+                                <i class="fas fa-file-csv"></i> Paste CSV with headers or JSON array. CSV will be auto-detected.
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Data Type</label>
+                            <select id="dataTypeSelect" class="form-control">
+                                <option value="trade_flows">Trade Flows (source_country, destination_country, commodity)</option>
+                                <option value="commodity_hierarchy">Commodity Hierarchy (Level0, Level1, Level2, Level3)</option>
+                                <option value="balance_sheet">Balance Sheet (id, gid, product_name, product_season)</option>
+                                <option value="production_areas">Production Areas (production_area_id, gid, commodity)</option>
+                                <option value="geometries">Geometries (GID_0, NAME_0, Level, GID_1, NAME_1...)</option>
+                                <option value="custom">Custom (provide metadata below)</option>
+                            </select>
+                            <small class="form-hint">Select the type of data you're uploading to ensure proper graph structure</small>
+                        </div>
+
+                        <div class="form-group" id="customMetadataGroup" style="display: none;">
+                            <label>Custom Metadata (JSON) - Only for Custom type</label>
+                            <textarea 
+                                id="metadataInput" 
+                                class="form-control code-input"
+                                rows="6"
+                                placeholder='{
+  "data_type": "custom_entity",
+  "source": "LDC",
+  "additional_context": "..."
+}'
+                            ></textarea>
+                        </div>
+
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="validateData" checked>
+                            Validate against ontology
+                        </label>
+
+                        <button class="btn btn-primary" id="ingestBtn">
+                            <i class="fas fa-upload"></i> Ingest Data
+                        </button>
+
+                        <div class="result-container" id="ingestionResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-check-circle"></i> Ingestion Complete</h4>
+                            </div>
+                            <div class="result-body">
+                                <div class="stats-grid" id="ingestionStats"></div>
+                                <div class="result-details" id="ingestionDetails"></div>
+                            </div>
+                        </div>
+
+                        <div class="loader" id="ingestionLoader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Ingesting data...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Document Ingestion Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Ingest Unstructured Documents</h3>
+                    </div>
+                    <div class="card-body">
+                        <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                            <i class="fas fa-info-circle"></i> 
+                            Paste unstructured text (reports, news, articles) and Graphiti will automatically extract entities, relationships, and facts to integrate into the knowledge graph.
+                        </p>
+
+                        <div class="form-group">
+                            <label>Sample Documents</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-sm btn-secondary sample-doc-btn" data-sample="market_report">
+                                    <i class="fas fa-file-alt"></i> Market Report
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-doc-btn" data-sample="trade_news">
+                                    <i class="fas fa-newspaper"></i> Trade News
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-doc-btn" data-sample="production_update">
+                                    <i class="fas fa-chart-line"></i> Production Update
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Document Text</label>
+                            <textarea 
+                                id="documentText" 
+                                class="form-control code-input"
+                                rows="8"
+                                placeholder="Paste your document text here...
+
+Example:
+Brazil's soybean production reached 150 million metric tons in 2023, with exports to China increasing by 15%. The Mato Grosso region reported exceptional yields of 3.5 tons per hectare, surpassing previous records. Meanwhile, corn production in Iowa showed a 10% decline due to drought conditions affecting the Midwest region."
+                            ></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Document Source</label>
+                            <input 
+                                type="text" 
+                                id="documentSource" 
+                                class="form-control"
+                                placeholder="e.g., Market Report, Reuters, USDA Report"
+                                value="Market Report"
+                            >
+                        </div>
+
+                        <button class="btn btn-primary" id="ingestDocumentBtn">
+                            <i class="fas fa-brain"></i> Extract & Ingest with Graphiti
+                        </button>
+
+                        <div class="result-container" id="documentIngestionResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-check-circle"></i> Document Processed</h4>
+                            </div>
+                            <div class="result-body">
+                                <div class="stats-grid" id="documentIngestionStats"></div>
+                                <div id="extractedEntitiesContainer" style="margin-top: 1rem;">
+                                    <h5><i class="fas fa-tags"></i> Extracted Entities</h5>
+                                    <div id="extractedEntitiesList" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="loader" id="documentIngestionLoader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Processing document with Graphiti AI...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Impact Analysis -->
+            <div class="tab-content" id="impact">
+                <div class="page-header">
+                    <h2><i class="fas fa-globe"></i> Impact Analysis</h2>
+                    <p>Analyze spatial impact of weather events and disruptions on France-USA commodity trade</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Event Impact Analysis</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Event Type</label>
+                            <select id="eventTypeSelect" class="form-control">
+                                <option value="drought">Drought</option>
+                                <option value="flood">Flood</option>
+                                <option value="frost">Frost</option>
+                                <option value="policy">Policy Change</option>
+                                <option value="trade">Trade Disruption</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Reference Production Areas & Regions</label>
+                            <select id="referenceGeometry" class="form-control">
+                                <option value="">-- Select a reference location --</option>
+                                <optgroup label="France Regions">
+                                    <option value="france_north">Northern France (Hauts-de-France, Île-de-France) - Wheat Belt</option>
+                                    <option value="france_picardie">Picardie Region - Common Wheat</option>
+                                    <option value="france_normandy">Normandy - Durum Wheat</option>
+                                    <option value="france_all">All France Production Areas</option>
+                                </optgroup>
+                                <optgroup label="USA Regions">
+                                    <option value="usa_midwest">US Midwest Corn Belt (Iowa, Illinois, Nebraska)</option>
+                                    <option value="usa_wheat">US Wheat Belt (Kansas, North Dakota)</option>
+                                    <option value="usa_south">US Southern States (Cotton, Peas)</option>
+                                    <option value="usa_all">All USA Production Areas</option>
+                                </optgroup>
+                                <option value="custom">Custom Geometry...</option>
+                            </select>
+                            <small class="form-hint">Select a production area from LDC system or use custom geometry</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Event Geometry (GeoJSON)</label>
+                            <textarea 
+                                id="eventGeometry" 
+                                class="form-control code-input"
+                                rows="8"
+                                placeholder='{
+  "type": "Polygon",
+  "coordinates": [
+    [
+      [2.0, 48.5], [4.5, 48.5],
+      [4.5, 51.0], [2.0, 51.0],
+      [2.0, 48.5]
+    ]
+  ]
+}'
+                            ></textarea>
+                            <small class="form-hint">
+                                <i class="fas fa-info-circle"></i> Northern France example shown. Coordinates: [longitude, latitude]
+                                <br>France: ~2-5° E, 48-51° N | USA Midwest: ~-95 to -85° W, 40-45° N
+                            </small>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Max Hops</label>
+                                <input type="number" id="maxHops" class="form-control" value="5" min="1" max="10">
+                            </div>
+                            <div class="form-group">
+                                <label>Impact Threshold</label>
+                                <input type="number" id="impactThreshold" class="form-control" value="0.3" min="0" max="1" step="0.1">
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" id="analyzeImpactBtn">
+                            <i class="fas fa-search"></i> Analyze Impact
+                        </button>
+
+                        <div class="result-container" id="impactResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-exclamation-triangle"></i> Impact Analysis Results</h4>
+                            </div>
+                            <div class="stats-grid" id="impactStats"></div>
+                            <div class="result-body">
+                                <h5>Top Impacted Entities</h5>
+                                <div class="table-container">
+                                    <table class="data-table" id="impactTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Entity Type</th>
+                                                <th>Impact Score</th>
+                                                <th>Path Length</th>
+                                                <th>Geography</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="impactTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="loader" id="impactLoader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Analyzing impacts...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 5: Data Discovery -->
+            <div class="tab-content" id="discovery">
+                <div class="page-header">
+                    <h2><i class="fas fa-search"></i> Data Discovery</h2>
+                    <p>Explore LDC commodities, geographies, trade flows, and production areas</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Search Entities</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="search-container">
+                            <input 
+                                type="text" 
+                                id="searchInput" 
+                                class="search-input" 
+                                placeholder="Search: France, USA, Common Wheat, Yellow Corn, trade flows..."
+                            >
+                            <button class="btn btn-primary" id="searchBtn">
+                                <i class="fas fa-search"></i> Search
+                            </button>
+                        </div>
+
+                        <div class="form-grid" style="margin-top: 1rem;">
+                            <div class="form-group">
+                                <label>Entity Types (optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="entityTypesFilter" 
+                                    class="form-control"
+                                    placeholder="Geography,Commodity,ProductionArea,BalanceSheet"
+                                >
+                                <small class="form-hint">Comma-separated list. Leave empty for all types.</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Limit</label>
+                                <input type="number" id="searchLimit" class="form-control" value="20" min="1" max="100">
+                            </div>
+                        </div>
+
+                        <div class="result-container" id="searchResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-list"></i> Search Results</h4>
+                                <span id="searchCount"></span>
+                            </div>
+                            <div id="searchResults"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Custom Cypher Query</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Sample Cypher Queries (LDC Schema)</label>
+                            <div class="quick-questions" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (g1:Geography {name: "France"})-[t:TRADES_WITH]->(g2:Geography {name: "United States"})&#10;RETURN t.commodity as commodity, t.flow_type as type&#10;ORDER BY commodity'>
+                                    France → USA Trade Flows
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (g1:Geography {name: "United States"})-[t:TRADES_WITH]->(g2:Geography {name: "France"})&#10;RETURN t.commodity as commodity, t.flow_type as type&#10;ORDER BY commodity'>
+                                    USA → France Trade Flows
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (c:Commodity)-[:SUBCLASS_OF*]->(parent:Commodity)&#10;RETURN c.name as commodity, collect(parent.name) as hierarchy&#10;ORDER BY c.name&#10;LIMIT 10'>
+                                    Commodity Hierarchies
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (pa:ProductionArea)-[:PRODUCES]->(c:Commodity)&#10;RETURN pa.name as area, collect(DISTINCT c.name) as commodities&#10;ORDER BY pa.name'>
+                                    Production Areas & Commodities
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (bs:BalanceSheet)-[:FOR_COMMODITY]->(c:Commodity)&#10;MATCH (bs)-[:FOR_GEOGRAPHY]->(g:Geography)&#10;RETURN g.name as geography, c.name as commodity, bs.balance_sheet_id as id&#10;LIMIT 10'>
+                                    Balance Sheets
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (g:Geography {level: 0})&#10;RETURN g.name as country, g.gid_code as code&#10;ORDER BY g.name'>
+                                    All Countries
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (g:Geography {level: 1})&#10;WHERE g.gid_code STARTS WITH "FRA"&#10;RETURN g.name as region, g.gid_code as code&#10;ORDER BY g.name'>
+                                    French Regions
+                                </button>
+                                <button class="btn btn-sm btn-secondary sample-query-btn" data-query='MATCH (wi:WeatherIndicator)&#10;RETURN wi.indicator_id as id, wi.name as indicator&#10;ORDER BY wi.name'>
+                                    Weather Indicators
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Cypher Query</label>
+                            <textarea 
+                                id="cypherQuery" 
+                                class="form-control code-input"
+                                rows="6"
+                                placeholder='MATCH (g1:Geography)-[t:TRADES_WITH]->(g2:Geography)&#10;RETURN g1.name as from, g2.name as to, t.commodity&#10;ORDER BY g1.name, g2.name&#10;LIMIT 10'
+                            ></textarea>
+                            <small class="form-hint">
+                                <i class="fas fa-info-circle"></i> Use LDC schema: Geography, Commodity, TRADES_WITH, PRODUCES, FOR_COMMODITY, etc.
+                            </small>
+                        </div>
+
+                        <button class="btn btn-primary" id="executeCypherBtn">
+                            <i class="fas fa-play"></i> Execute Query
+                        </button>
+
+                        <div class="result-container" id="cypherResult" style="display: none;">
+                            <div class="result-header">
+                                <h4><i class="fas fa-database"></i> Query Results</h4>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table" id="cypherTable">
+                                    <thead id="cypherTableHead"></thead>
+                                    <tbody id="cypherTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 6: Schema Explorer -->
+            <div class="tab-content" id="schema">
+                <div class="page-header">
+                    <h2><i class="fas fa-sitemap"></i> Schema Explorer</h2>
+                    <p>Explore the ontology and data model</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Ontology Schema</h3>
+                        <button class="btn btn-sm btn-secondary" id="loadSchemaBtn">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="schema-container" id="schemaContainer">
+                            <div class="loader">
+                                <div class="spinner"></div>
+                                <p>Loading schema...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 7: Statistics -->
+            <div class="tab-content" id="stats">
+                <div class="page-header">
+                    <h2><i class="fas fa-chart-bar"></i> Graph Statistics</h2>
+                    <p>Overview of the knowledge graph</p>
+                </div>
+
+                <div class="stats-dashboard" id="statsDashboard">
+                    <div class="loader">
+                        <div class="spinner"></div>
+                        <p>Loading statistics...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="btn-close" id="closeSettingsBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>API Base URL</label>
+                    <input type="text" id="apiUrlInput" class="form-control" value="http://localhost:8080">
+                </div>
+                <div class="form-group">
+                    <label>Theme</label>
+                    <select id="themeSelect" class="form-control">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelSettingsBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveSettingsBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="static/js/app.js"></script>
+</body>
+</html>

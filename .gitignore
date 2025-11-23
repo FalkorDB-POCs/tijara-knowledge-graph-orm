@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# API Keys - DO NOT COMMIT THESE!
+*.key
+*_key
+*_secret
+api_keys.txt
+secrets.yaml
+
+# Logs
+*.log
+api.log
+nohup.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# FalkorDB data
+data/
+*.rdb
+dump.rdb
+appendonly.aof
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.cache
+*_output.txt
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Mac OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
