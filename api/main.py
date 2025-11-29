@@ -265,6 +265,26 @@ async def root():
         }
 
 
+@app.get("/login.html")
+async def login_page():
+    """Serve the login page."""
+    login_html = os.path.join(os.path.dirname(__file__), '..', 'web', 'login.html')
+    if os.path.exists(login_html):
+        return FileResponse(login_html)
+    else:
+        raise HTTPException(status_code=404, detail="Login page not found")
+
+
+@app.get("/admin.html")
+async def admin_page():
+    """Serve the admin page."""
+    admin_html = os.path.join(os.path.dirname(__file__), '..', 'web', 'admin.html')
+    if os.path.exists(admin_html):
+        return FileResponse(admin_html)
+    else:
+        raise HTTPException(status_code=404, detail="Admin page not found")
+
+
 @app.get("/config")
 async def get_config():
     """Get system configuration including active dataset."""
