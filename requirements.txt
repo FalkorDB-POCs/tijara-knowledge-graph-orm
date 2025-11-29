@@ -1,6 +1,6 @@
 # Core Dependencies
 falkordb>=4.0.0
-falkordb-orm>=0.1.0
+falkordb-orm>=1.1.1
 graphiti-core>=0.3.0
 python-dotenv>=1.0.0
 
