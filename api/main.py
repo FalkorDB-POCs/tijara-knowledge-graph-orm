@@ -121,7 +121,7 @@ async def login(username: str = Form(...), password: str = Form(...)):
                u.email as email,
                id(u) as user_id
         """
-        result = kg.falkordb.query(query, {'username': username})
+        result = kg.falkordb.graph.query(query, {'username': username})
         
         if not result.result_set:
             raise HTTPException(
@@ -201,7 +201,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
                collect(DISTINCT r.name) as roles,
                collect(DISTINCT p.name) as permissions
         """
-        result = kg.falkordb.query(query, {'username': username})
+        result = kg.falkordb.graph.query(query, {'username': username})
         
         if not result.result_set:
             raise HTTPException(status_code=404, detail="User not found")

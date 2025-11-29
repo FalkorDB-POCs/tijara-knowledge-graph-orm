@@ -22,7 +22,8 @@ class SecurityContext:
         """
         self.user_data = user_data or {}
         self.graph = graph
-        self.username = self.user_data.get('username')
+        # JWT payload uses 'sub' for username, but also check 'username'
+        self.username = self.user_data.get('sub') or self.user_data.get('username')
         self.is_superuser = self.user_data.get('is_superuser', False)
         self._permissions_cache: Optional[Set[str]] = None
         self._roles_cache: Optional[List[str]] = None
