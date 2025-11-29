@@ -33,13 +33,13 @@ class Commodity:
     
     # Relationships
     parent: Optional["Commodity"] = relationship(
-        type="SUBCLASS_OF",
+        relationship_type="SUBCLASS_OF",
         direction="OUTGOING",
         lazy=True
     )
     
     children: List["Commodity"] = relationship(
-        type="SUBCLASS_OF",
+        relationship_type="SUBCLASS_OF",
         direction="INCOMING",
         lazy=True
     )

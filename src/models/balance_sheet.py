@@ -24,19 +24,19 @@ class BalanceSheet:
     
     # Relationships
     commodity: Optional["Commodity"] = relationship(
-        type="FOR_COMMODITY",
+        relationship_type="FOR_COMMODITY",
         direction="OUTGOING",
         lazy=True
     )
     
     geography: Optional["Geography"] = relationship(
-        type="FOR_GEOGRAPHY",
+        relationship_type="FOR_GEOGRAPHY",
         direction="OUTGOING",
         lazy=True
     )
     
     components: List["Component"] = relationship(
-        type="HAS_COMPONENT",
+        relationship_type="HAS_COMPONENT",
         direction="OUTGOING",
         lazy=True
     )

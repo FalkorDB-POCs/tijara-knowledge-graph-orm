@@ -14,10 +14,44 @@ class CommodityRepository(Repository[Commodity]):
     Provides derived query methods and custom queries for commodity data.
     """
     
-    # Derived query methods (auto-implemented by ORM)
-    # - find_by_name(name: str) -> Optional[Commodity]
-    # - find_by_level(level: int) -> List[Commodity]
-    # - find_by_category(category: str) -> List[Commodity]
+    def find_by_name(self, name: str) -> Optional[Commodity]:
+        """Find commodity by exact name match."""
+        cypher = """
+        MATCH (c:Commodity)
+        WHERE c.name = $name
+        RETURN c
+        LIMIT 1
+        """
+        result = self.graph.query(cypher, {'name': name})
+        if result.result_set:
+            return self.mapper.map_from_record(result.result_set[0], Commodity, header=result.header)
+        return None
+    
+    @query(
+        """
+        MATCH (c:Commodity)
+        WHERE c.level = $level
+        RETURN c
+        ORDER BY c.name
+        """,
+        returns=Commodity
+    )
+    def find_by_level(self, level: int) -> List[Commodity]:
+        """Find all commodities at a specific level."""
+        pass
+    
+    @query(
+        """
+        MATCH (c:Commodity)
+        WHERE c.category = $category
+        RETURN c
+        ORDER BY c.name
+        """,
+        returns=Commodity
+    )
+    def find_by_category(self, category: str) -> List[Commodity]:
+        """Find all commodities in a category."""
+        pass
     
     @query(
         """
@@ -69,4 +103,18 @@ class CommodityRepository(Repository[Commodity]):
     )
     def search_by_name(self, search_term: str, limit: int = 20) -> List[Commodity]:
         """Search commodities by name fragment."""
+        pass
+    
+    @query(
+        """
+        MATCH (c:Commodity)
+        WHERE toLower(c.name) CONTAINS toLower($search_term)
+        RETURN c
+        ORDER BY c.level, c.name
+        LIMIT $limit
+        """,
+        returns=Commodity
+    )
+    def search_case_insensitive(self, search_term: str, limit: int = 20) -> List[Commodity]:
+        """Search commodities by name fragment (case-insensitive)."""
         pass

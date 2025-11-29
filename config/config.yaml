@@ -1,0 +1,91 @@
+# Tijara Knowledge Graph Configuration
+
+# FalkorDB Connection
+falkordb:
+  host: "localhost"
+  port: 6379
+  graph_name: "ldc_graph"
+  username: null
+  password: null
+  ssl: false
+  max_connections: 50
+  timeout: 30
+  
+# Graphiti Configuration
+graphiti:
+  llm_provider: "openai"
+  llm_model: "gpt-4-turbo-preview"
+  embedding_model: "text-embedding-3-large"
+  embedding_dimensions: 3072
+  temperature: 0.1
+  max_tokens: 4096
+  enable_cache: true
+  
+  # Graphiti FalkorDB Connection
+  falkordb_connection:
+    host: "localhost"
+    port: 6379
+    graph_name: "graphiti"
+    username: null
+    password: null
+  
+# OpenAI API (set via environment variable OPENAI_API_KEY)
+openai:
+  api_key: null  # Set via OPENAI_API_KEY environment variable
+  organization: null
+  
+# API Server
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 4
+  log_level: "info"
+  cors_origins:
+    - "http://localhost:3000"
+    - "https://ldc-internal.com"
+  
+# Data Ingestion
+ingestion:
+  batch_size: 1000
+  enable_validation: true
+  enable_deduplication: true
+  retain_history: true
+  max_retries: 3
+  
+# Graph Analytics
+analytics:
+  max_depth: 5
+  page_size: 100
+  enable_parallel: true
+  cache_results: true
+  
+# GraphRAG
+rag:
+  chunk_size: 1000
+  chunk_overlap: 200
+  retrieval_top_k: 10
+  rerank: true
+  min_relevance_score: 0.7
+  enable_hybrid_search: true
+  
+# Spatial Operations
+spatial:
+  default_crs: "EPSG:4326"
+  buffer_distance: 10
+  intersection_threshold: 0.1
+  
+# Logging
+logging:
+  level: "INFO"
+  format: "json"
+  output: "stdout"
+  file: null
+  rotation: "daily"
+  retention: 30
+  
+# Features
+features:
+  enable_batch_queries: true
+  enable_impact_analysis: true
+  enable_spatial_queries: true

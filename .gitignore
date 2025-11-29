@@ -74,3 +74,4 @@ htmlcov/
 .AppleDouble
 .LSOverride
 Thumbs.db
+config/config.yaml

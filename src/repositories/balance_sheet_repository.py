@@ -61,3 +61,17 @@ class BalanceSheetRepository(Repository[BalanceSheet]):
     ) -> List[BalanceSheet]:
         """Find balance sheets for a specific commodity and geography combination."""
         pass
+    
+    @query(
+        """
+        MATCH (bs:BalanceSheet)
+        WHERE toLower(bs.balance_sheet_id) CONTAINS toLower($search_term)
+        RETURN bs
+        ORDER BY bs.balance_sheet_id
+        LIMIT $limit
+        """,
+        returns=BalanceSheet
+    )
+    def search_case_insensitive(self, search_term: str, limit: int = 20) -> List[BalanceSheet]:
+        """Search balance sheets by ID (case-insensitive)."""
+        pass

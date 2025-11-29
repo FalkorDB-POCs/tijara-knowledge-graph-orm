@@ -13,6 +13,12 @@ from ..ontology.schema import OntologySchema
 from ..analytics.graph_algorithms import GraphAnalytics
 from ..analytics.spatial_ops import SpatialOperations
 from ..rag.query_engine import QueryEngine
+from ..repositories import (
+    CommodityRepository,
+    GeographyRepository,
+    BalanceSheetRepository,
+    ProductionAreaRepository
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +59,17 @@ class TijaraKnowledgeGraph:
             graphiti=self.graphiti,
             config=config.get('rag', {})
         )
+        
+        # Initialize ORM repositories
+        from ..models.commodity import Commodity
+        from ..models.geography import Geography
+        from ..models.balance_sheet import BalanceSheet
+        from ..models.production_area import ProductionArea
+        
+        self.commodity_repo = CommodityRepository(self.falkordb.graph, Commodity)
+        self.geography_repo = GeographyRepository(self.falkordb.graph, Geography)
+        self.balance_sheet_repo = BalanceSheetRepository(self.falkordb.graph, BalanceSheet)
+        self.production_area_repo = ProductionAreaRepository(self.falkordb.graph, ProductionArea)
         
         logger.info("Tijara Knowledge Graph initialized successfully")
     
@@ -429,39 +446,43 @@ class TijaraKnowledgeGraph:
         return min(base_score, 1.0)
     
     def _get_or_create_concepts(self, metadata: Dict[str, Any]) -> Dict[str, str]:
-        """Get or create concept nodes and return their IDs."""
+        """Get or create concept nodes and return their IDs using ORM."""
         concept_ids = {}
         
         try:
             # Commodity concept
             if metadata.get('commodity'):
-                commodity = metadata['commodity']
-                # Check if exists
-                query = f'MATCH (n:Commodity {{name: "{commodity}"}}) RETURN id(n) as id LIMIT 1'
-                result = self.falkordb.execute_query(query)
-                if result:
-                    concept_ids['commodity'] = str(result[0]['id'])
+                commodity_name = metadata['commodity']
+                commodity = self.commodity_repo.find_by_name(commodity_name)
+                if commodity:
+                    # Get ID using raw query (ORM entities don't expose internal node ID)
+                    query = f'MATCH (n:Commodity {{name: "{commodity_name}"}}) RETURN id(n) as id LIMIT 1'
+                    result = self.falkordb.execute_query(query)
+                    if result:
+                        concept_ids['commodity'] = str(result[0]['id'])
                 else:
-                    # Create it
+                    # Create it using raw client (not ORM-managed concept)
                     concept_ids['commodity'] = self.falkordb.create_entity(
                         'Commodity',
-                        {'name': commodity, 'type': 'commodity'}
+                        {'name': commodity_name, 'type': 'commodity'}
                     )
             
             # Geography concept (country or region)
             geo_name = metadata.get('region') or metadata.get('country')
             if geo_name:
-                query = f'MATCH (n:Geography {{name: "{geo_name}"}}) RETURN id(n) as id LIMIT 1'
-                result = self.falkordb.execute_query(query)
-                if result:
-                    concept_ids['geography'] = str(result[0]['id'])
+                geography = self.geography_repo.find_by_name(geo_name)
+                if geography:
+                    query = f'MATCH (n:Geography {{name: "{geo_name}"}}) RETURN id(n) as id LIMIT 1'
+                    result = self.falkordb.execute_query(query)
+                    if result:
+                        concept_ids['geography'] = str(result[0]['id'])
                 else:
                     concept_ids['geography'] = self.falkordb.create_entity(
                         'Geography',
                         {'name': geo_name, 'type': 'geography', 'country': metadata.get('country')}
                     )
             
-            # Indicator concept
+            # Indicator concept (not an ORM entity)
             if metadata.get('type'):
                 indicator = metadata['type']
                 query = f'MATCH (n:Indicator {{name: "{indicator}"}}) RETURN id(n) as id LIMIT 1'
@@ -474,7 +495,7 @@ class TijaraKnowledgeGraph:
                         {'name': indicator, 'type': 'indicator'}
                     )
             
-            # Source concept
+            # Source concept (not an ORM entity)
             if metadata.get('source'):
                 source = metadata['source']
                 query = f'MATCH (n:Source {{name: "{source}"}}) RETURN id(n) as id LIMIT 1'
@@ -563,7 +584,7 @@ class TijaraKnowledgeGraph:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Search for entities by name or properties.
+        Search for entities by name or properties using ORM repositories.
         
         Args:
             search_term: Search query
@@ -573,11 +594,54 @@ class TijaraKnowledgeGraph:
         Returns:
             List of matching entities
         """
-        return self.falkordb.search_entities(
-            search_term=search_term,
-            entity_types=entity_types,
-            limit=limit
-        )
+        results = []
+        
+        # If entity_types specified, only search those
+        search_all = not entity_types or len(entity_types) == 0
+        
+        # Search Commodity entities
+        if search_all or 'Commodity' in entity_types:
+            commodities = self.commodity_repo.search_case_insensitive(search_term, limit=limit)
+            for c in commodities:
+                results.append({
+                    'type': 'Commodity',
+                    'name': c.name,
+                    'level': c.level,
+                    'category': c.category
+                })
+        
+        # Search Geography entities
+        if search_all or 'Geography' in entity_types:
+            geographies = self.geography_repo.search_case_insensitive(search_term, limit=limit)
+            for g in geographies:
+                results.append({
+                    'type': 'Geography',
+                    'name': g.name,
+                    'level': g.level,
+                    'gid_code': g.gid_code
+                })
+        
+        # Search BalanceSheet entities
+        if search_all or 'BalanceSheet' in entity_types:
+            balance_sheets = self.balance_sheet_repo.search_case_insensitive(search_term, limit=limit)
+            for bs in balance_sheets:
+                results.append({
+                    'type': 'BalanceSheet',
+                    'balance_sheet_id': bs.balance_sheet_id,
+                    'product_name': bs.product_name,
+                    'season': bs.season
+                })
+        
+        # Search ProductionArea entities
+        if search_all or 'ProductionArea' in entity_types:
+            production_areas = self.production_area_repo.search_case_insensitive(search_term, limit=limit)
+            for pa in production_areas:
+                results.append({
+                    'type': 'ProductionArea',
+                    'name': pa.name
+                })
+        
+        return results[:limit]
     
     def get_entity_history(
         self,

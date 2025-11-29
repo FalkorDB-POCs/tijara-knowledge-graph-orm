@@ -14,11 +14,18 @@ class GeographyRepository(Repository[Geography]):
     Provides derived query methods and custom queries for geographic data.
     """
     
-    # Derived query methods (auto-implemented by ORM)
-    # - find_by_name(name: str) -> Optional[Geography]
-    # - find_by_level(level: int) -> List[Geography]
-    # - find_by_iso_code(iso_code: str) -> Optional[Geography]
-    # - find_by_gid_code(gid_code: str) -> Optional[Geography]
+    def find_by_name(self, name: str) -> Optional[Geography]:
+        """Find geography by exact name match."""
+        cypher = """
+        MATCH (g:Geography)
+        WHERE g.name = $name
+        RETURN g
+        LIMIT 1
+        """
+        result = self.graph.query(cypher, {'name': name})
+        if result.result_set:
+            return self.mapper.map_from_record(result.result_set[0], Geography, header=result.header)
+        return None
     
     @query(
         """
@@ -69,4 +76,31 @@ class GeographyRepository(Repository[Geography]):
     )
     def find_all_countries(self) -> List[Geography]:
         """Find all country-level geographies."""
+        pass
+    
+    @query(
+        """
+        MATCH (g:Geography)
+        WHERE toLower(g.name) CONTAINS toLower($search_term) OR toLower(g.gid_code) = toLower($search_term)
+        RETURN g
+        ORDER BY g.level, g.name
+        LIMIT $limit
+        """,
+        returns=Geography
+    )
+    def search_case_insensitive(self, search_term: str, limit: int = 20) -> List[Geography]:
+        """Search geographies by name or code (case-insensitive)."""
+        pass
+    
+    @query(
+        """
+        MATCH (g1:Geography)-[t:TRADES_WITH]->(g2:Geography)
+        WHERE toLower(g1.name) CONTAINS toLower($search_term) OR toLower(g2.name) CONTAINS toLower($search_term)
+        RETURN g1, g2, t.commodity as commodity, t.flow_type as flow_type
+        LIMIT $limit
+        """
+    )
+    def find_trade_flows_by_geography(self, search_term: str, limit: int = 20):
+        """Find trade flows involving a geography (case-insensitive)."""
+        # Note: This returns raw query results (not Geography entities)
         pass

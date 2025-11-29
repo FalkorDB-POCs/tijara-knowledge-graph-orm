@@ -25,13 +25,13 @@ class ProductionArea:
     
     # Relationships
     geography: Optional["Geography"] = relationship(
-        type="IN_GEOGRAPHY",
+        relationship_type="IN_GEOGRAPHY",
         direction="OUTGOING",
         lazy=True
     )
     
     commodities: List["Commodity"] = relationship(
-        type="PRODUCES",
+        relationship_type="PRODUCES",
         direction="OUTGOING",
         lazy=True
     )

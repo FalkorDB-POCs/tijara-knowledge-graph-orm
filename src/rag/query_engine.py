@@ -13,6 +13,13 @@ try:
 except ImportError:
     from langchain.prompts import ChatPromptTemplate
 
+from ..repositories import (
+    CommodityRepository,
+    GeographyRepository,
+    BalanceSheetRepository,
+    ProductionAreaRepository
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +31,17 @@ class QueryEngine:
         self.falkordb = falkordb
         self.graphiti = graphiti
         self.config = config
+        
+        # Initialize ORM repositories
+        from ..models.commodity import Commodity
+        from ..models.geography import Geography
+        from ..models.balance_sheet import BalanceSheet
+        from ..models.production_area import ProductionArea
+        
+        self.commodity_repo = CommodityRepository(falkordb.graph, Commodity)
+        self.geography_repo = GeographyRepository(falkordb.graph, Geography)
+        self.balance_sheet_repo = BalanceSheetRepository(falkordb.graph, BalanceSheet)
+        self.production_area_repo = ProductionAreaRepository(falkordb.graph, ProductionArea)
         
         # Initialize LLM (optional - requires API key)
         try:
@@ -104,84 +122,83 @@ Context:
             except Exception as e:
                 logger.warning(f"Graphiti search failed: {e}")
         
-        # Step 4: Search FalkorDB for relevant data using LDC graph schema
+        # Step 4: Search FalkorDB for relevant data using ORM repositories
         subgraph_data = []
         for entity in all_entities[:5]:  # Limit to top 5 entities
-            # Try multiple case variations
-            entity_variations = [entity.capitalize(), entity.upper(), entity.lower(), entity.title()]
-            entity_variations = list(set(entity_variations))
-            
-            for entity_var in entity_variations:
+            try:
+                # Query 1: Search for Geography nodes using ORM
+                geographies = self.geography_repo.search_case_insensitive(entity, limit=3)
+                if geographies:
+                    logger.info(f"Found {len(geographies)} geography results for: {entity}")
+                    for g in geographies:
+                        subgraph_data.append({
+                            "type": "Geography",
+                            "name": g.name,
+                            "labels": ["Geography"],
+                            "code": g.gid_code
+                        })
+                
+                # Query 2: Search for Commodity nodes using ORM
+                commodities = self.commodity_repo.search_case_insensitive(entity, limit=3)
+                if commodities:
+                    logger.info(f"Found {len(commodities)} commodity results for: {entity}")
+                    for c in commodities:
+                        subgraph_data.append({
+                            "type": "Commodity",
+                            "name": c.name,
+                            "labels": ["Commodity"]
+                        })
+                
+                # Query 3: Search for trade flows using ORM repository method
+                # Note: find_trade_flows_by_geography returns raw results with relationship data
                 try:
-                    # Query 1: Search for Geography nodes (countries/regions) - case insensitive
-                    query = f'''
-                    MATCH (g:Geography)
-                    WHERE toLower(g.name) CONTAINS toLower("{entity_var}") OR toLower(g.gid_code) = toLower("{entity_var}")
-                    RETURN "Geography" as type, g.name as name, labels(g) as labels, g.gid_code as code
-                    LIMIT 3
-                    '''
-                    results = self.falkordb.execute_query(query)
-                    if results:
-                        logger.info(f"Found {len(results)} geography results for: {entity_var}")
-                        for r in results:
-                            subgraph_data.append({"type": r["type"], "name": r["name"], "labels": r["labels"], "code": r["code"]})
-                    
-                    # Query 2: Search for Commodity nodes - case insensitive
-                    query = f'''
-                    MATCH (c:Commodity)
-                    WHERE toLower(c.name) CONTAINS toLower("{entity_var}")
-                    RETURN "Commodity" as type, c.name as name, labels(c) as labels
-                    LIMIT 3
-                    '''
-                    results = self.falkordb.execute_query(query)
-                    if results:
-                        logger.info(f"Found {len(results)} commodity results for: {entity_var}")
-                        for r in results:
-                            subgraph_data.append({"type": r["type"], "name": r["name"], "labels": r["labels"]})
-                    
-                    # Query 3: Search for trade flows involving this entity - case insensitive
-                    query = f'''
+                    cypher = """
                     MATCH (g1:Geography)-[t:TRADES_WITH]->(g2:Geography)
-                    WHERE toLower(g1.name) CONTAINS toLower("{entity_var}") OR toLower(g2.name) CONTAINS toLower("{entity_var}")
-                    RETURN "TradeFlow" as type, g1.name as from, g2.name as to, t.commodity as commodity, t.flow_type as flow_type
+                    WHERE toLower(g1.name) CONTAINS toLower($search_term) OR toLower(g2.name) CONTAINS toLower($search_term)
+                    RETURN g1.name as from, g2.name as to, t.commodity as commodity, t.flow_type as flow_type
                     LIMIT 5
-                    '''
-                    results = self.falkordb.execute_query(query)
-                    if results:
-                        logger.info(f"Found {len(results)} trade flow results for: {entity_var}")
-                        for r in results:
-                            subgraph_data.append({"type": r["type"], "from": r["from"], "to": r["to"], "commodity": r["commodity"], "flow_type": r["flow_type"]})
-                    
-                    # Query 4: Search for production areas - case insensitive
-                    query = f'''
-                    MATCH (pa:ProductionArea)-[:PRODUCES]->(c:Commodity)
-                    WHERE toLower(c.name) CONTAINS toLower("{entity_var}") OR toLower(pa.name) CONTAINS toLower("{entity_var}")
-                    RETURN "ProductionArea" as type, pa.name as area_name, c.name as commodity
-                    LIMIT 3
-                    '''
-                    results = self.falkordb.execute_query(query)
-                    if results:
-                        logger.info(f"Found {len(results)} production area results for: {entity_var}")
-                        for r in results:
-                            subgraph_data.append({"type": r["type"], "area_name": r["area_name"], "commodity": r["commodity"]})
-                    
-                    # Query 5: Search for balance sheets - case insensitive
-                    query = f'''
-                    MATCH (bs:BalanceSheet)
-                    WHERE toLower(bs.balance_sheet_id) CONTAINS toLower("{entity_var}")
-                    OPTIONAL MATCH (bs)-[:FOR_COMMODITY]->(c:Commodity)
-                    OPTIONAL MATCH (bs)-[:FOR_GEOGRAPHY]->(g:Geography)
-                    RETURN "BalanceSheet" as type, bs.balance_sheet_id as id, c.name as commodity, g.name as geography
-                    LIMIT 3
-                    '''
-                    results = self.falkordb.execute_query(query)
-                    if results:
-                        logger.info(f"Found {len(results)} balance sheet results for: {entity_var}")
-                        for r in results:
-                            subgraph_data.append({"type": r["type"], "id": r["id"], "commodity": r["commodity"], "geography": r["geography"]})
-                    
+                    """
+                    result = self.geography_repo.graph.query(cypher, {'search_term': entity})
+                    if result.result_set:
+                        logger.info(f"Found {len(result.result_set)} trade flow results for: {entity}")
+                        for row in result.result_set:
+                            # Extract values from result row [from, to, commodity, flow_type]
+                            subgraph_data.append({
+                                "type": "TradeFlow",
+                                "from": row[0],
+                                "to": row[1],
+                                "commodity": row[2],
+                                "flow_type": row[3]
+                            })
                 except Exception as e:
-                    logger.warning(f"FalkorDB search for '{entity_var}' failed: {e}")
+                    logger.warning(f"Trade flow search failed: {e}")
+                
+                # Query 4: Search for production areas using ORM
+                production_areas = self.production_area_repo.search_case_insensitive(entity, limit=3)
+                if production_areas:
+                    logger.info(f"Found {len(production_areas)} production area results for: {entity}")
+                    for pa in production_areas:
+                        # Get commodity info via relationship
+                        subgraph_data.append({
+                            "type": "ProductionArea",
+                            "area_name": pa.name,
+                            "commodity": "N/A"  # Would need to eager load relationship
+                        })
+                
+                # Query 5: Search for balance sheets using ORM
+                balance_sheets = self.balance_sheet_repo.search_case_insensitive(entity, limit=3)
+                if balance_sheets:
+                    logger.info(f"Found {len(balance_sheets)} balance sheet results for: {entity}")
+                    for bs in balance_sheets:
+                        subgraph_data.append({
+                            "type": "BalanceSheet",
+                            "id": bs.balance_sheet_id,
+                            "commodity": "N/A",  # Would need to eager load relationship
+                            "geography": "N/A"   # Would need to eager load relationship
+                        })
+                
+            except Exception as e:
+                logger.warning(f"FalkorDB search for '{entity}' failed: {e}")
             
             # Stop if we have enough results
             if len(subgraph_data) >= 25:

@@ -29,20 +29,20 @@ class Geography:
     
     # Relationships
     parent: Optional["Geography"] = relationship(
-        type="LOCATED_IN",
+        relationship_type="LOCATED_IN",
         direction="OUTGOING",
         lazy=True
     )
     
     children: List["Geography"] = relationship(
-        type="LOCATED_IN",
+        relationship_type="LOCATED_IN",
         direction="INCOMING",
         lazy=True
     )
     
     # Trade relationships (outgoing)
     trade_partners: List["Geography"] = relationship(
-        type="TRADES_WITH",
+        relationship_type="TRADES_WITH",
         direction="OUTGOING",
         lazy=True
     )
