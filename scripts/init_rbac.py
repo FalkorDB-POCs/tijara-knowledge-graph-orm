@@ -174,32 +174,26 @@ def init_rbac(graph_name='ldc_graph'):
     # Step 4: Verify Data
     print("\n4. Verifying RBAC Data...")
     
-    # Count nodes
-    count_query = """
-    MATCH (u:User) RETURN count(u) as users
-    UNION ALL
-    MATCH (r:Role) RETURN count(r) as roles
-    UNION ALL
-    MATCH (p:Permission) RETURN count(p) as permissions
-    """
-    result = graph.query(count_query)
-    users_count = result.result_set[0][0] if len(result.result_set) > 0 else 0
-    roles_count = result.result_set[1][0] if len(result.result_set) > 1 else 0
-    perms_count = result.result_set[2][0] if len(result.result_set) > 2 else 0
+    # Count nodes separately
+    users_result = graph.query("MATCH (u:User) RETURN count(u) as count")
+    users_count = users_result.result_set[0][0] if users_result.result_set else 0
+    
+    roles_result = graph.query("MATCH (r:Role) RETURN count(r) as count")
+    roles_count = roles_result.result_set[0][0] if roles_result.result_set else 0
+    
+    perms_result = graph.query("MATCH (p:Permission) RETURN count(p) as count")
+    perms_count = perms_result.result_set[0][0] if perms_result.result_set else 0
     
     print(f"   ✓ Users: {users_count}")
     print(f"   ✓ Roles: {roles_count}")
     print(f"   ✓ Permissions: {perms_count}")
     
-    # Verify relationships
-    rel_query = """
-    MATCH (:User)-[:HAS_ROLE]->(:Role) RETURN count(*) as user_roles
-    UNION ALL
-    MATCH (:Role)-[:HAS_PERMISSION]->(:Permission) RETURN count(*) as role_perms
-    """
-    result = graph.query(rel_query)
-    user_roles = result.result_set[0][0] if len(result.result_set) > 0 else 0
-    role_perms = result.result_set[1][0] if len(result.result_set) > 1 else 0
+    # Verify relationships separately
+    user_roles_result = graph.query("MATCH (:User)-[:HAS_ROLE]->(:Role) RETURN count(*) as count")
+    user_roles = user_roles_result.result_set[0][0] if user_roles_result.result_set else 0
+    
+    role_perms_result = graph.query("MATCH (:Role)-[:HAS_PERMISSION]->(:Permission) RETURN count(*) as count")
+    role_perms = role_perms_result.result_set[0][0] if role_perms_result.result_set else 0
     
     print(f"   ✓ User-Role assignments: {user_roles}")
     print(f"   ✓ Role-Permission assignments: {role_perms}")

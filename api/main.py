@@ -3,7 +3,7 @@ Tijara Knowledge Graph API
 FastAPI application providing REST API for the knowledge graph
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -13,6 +13,8 @@ import yaml
 import os
 
 from src.core.knowledge_graph import TijaraKnowledgeGraph
+from src.security.auth import create_access_token, verify_password
+from api.dependencies import get_current_user, require_permission
 
 # Load configuration
 config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')
@@ -92,6 +94,153 @@ class ImpactAnalysisRequest(BaseModel):
 
 # ========== API Endpoints ==========
 
+# ========== Authentication Endpoints ==========
+
+@app.post("/auth/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    """
+    Authenticate user and return JWT token.
+    
+    Form parameters:
+    - username: User's username
+    - password: User's password
+    
+    Returns:
+    - access_token: JWT token for authentication
+    - token_type: "bearer"
+    - user_info: Basic user information
+    """
+    try:
+        # Query user from database
+        query = """
+        MATCH (u:User {username: $username})
+        RETURN u.password_hash as password_hash,
+               u.is_superuser as is_superuser,
+               u.is_active as is_active,
+               u.full_name as full_name,
+               u.email as email,
+               id(u) as user_id
+        """
+        result = kg.falkordb.query(query, {'username': username})
+        
+        if not result.result_set:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid username or password"
+            )
+        
+        row = result.result_set[0]
+        password_hash = row[0]
+        is_superuser = row[1]
+        is_active = row[2]
+        full_name = row[3]
+        email = row[4]
+        user_id = row[5]
+        
+        # Check if user is active
+        if not is_active:
+            raise HTTPException(
+                status_code=403,
+                detail="User account is disabled"
+            )
+        
+        # Verify password
+        if not verify_password(password, password_hash):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid username or password"
+            )
+        
+        # Create JWT token
+        token_data = {
+            'sub': username,
+            'user_id': user_id,
+            'is_superuser': is_superuser
+        }
+        access_token = create_access_token(token_data)
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_info": {
+                "username": username,
+                "full_name": full_name,
+                "email": email,
+                "is_superuser": is_superuser
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Authentication failed: {str(e)}"
+        )
+
+
+@app.get("/auth/me")
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """
+    Get current authenticated user information.
+    
+    Returns:
+    - User information including username, roles, and permissions
+    """
+    try:
+        username = current_user['sub']
+        
+        # Query detailed user information with roles and permissions
+        query = """
+        MATCH (u:User {username: $username})
+        OPTIONAL MATCH (u)-[:HAS_ROLE]->(r:Role)
+        OPTIONAL MATCH (r)-[:HAS_PERMISSION]->(p:Permission)
+        RETURN u.username as username,
+               u.full_name as full_name,
+               u.email as email,
+               u.is_superuser as is_superuser,
+               collect(DISTINCT r.name) as roles,
+               collect(DISTINCT p.name) as permissions
+        """
+        result = kg.falkordb.query(query, {'username': username})
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        row = result.result_set[0]
+        return {
+            "username": row[0],
+            "full_name": row[1],
+            "email": row[2],
+            "is_superuser": row[3],
+            "roles": [r for r in row[4] if r],  # Filter out None values
+            "permissions": [p for p in row[5] if p]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch user info: {str(e)}"
+        )
+
+
+@app.post("/auth/logout")
+async def logout(current_user: dict = Depends(get_current_user)):
+    """
+    Logout endpoint (client should discard token).
+    
+    Note: JWT tokens are stateless, so logout is handled client-side
+    by discarding the token. In a production system, you might want
+    to implement token blacklisting.
+    """
+    return {
+        "status": "success",
+        "message": "Logged out successfully. Please discard your token."
+    }
+
+
+# ========== Public Endpoints ==========
+
 @app.get("/")
 async def root():
     """Serve the web interface."""
@@ -146,7 +295,10 @@ async def get_statistics():
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query_natural_language(request: QueryRequest):
+async def query_natural_language(
+    request: QueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Answer natural language questions using GraphRAG.
     
@@ -172,7 +324,7 @@ async def query_natural_language(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/ingest")
+@app.post("/ingest", dependencies=[Depends(require_permission("ingestion:write"))])
 async def ingest_data(request: IngestionRequest):
     """
     Ingest data with automatic ontology placement.
@@ -203,7 +355,7 @@ async def ingest_data(request: IngestionRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/ingest/document")
+@app.post("/ingest/document", dependencies=[Depends(require_permission("ingestion:write"))])
 async def ingest_document(request: DocumentIngestionRequest):
     """
     Ingest unstructured text documents using Graphiti.
@@ -275,7 +427,7 @@ async def ingest_document(request: DocumentIngestionRequest):
         raise HTTPException(status_code=500, detail=f"Document ingestion failed: {str(e)}")
 
 
-@app.post("/analytics")
+@app.post("/analytics", dependencies=[Depends(require_permission("analytics:execute"))])
 async def run_analytics(request: AnalyticsRequest):
     """
     Execute graph analytics algorithms.
@@ -308,7 +460,7 @@ async def run_analytics(request: AnalyticsRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/impact")
+@app.post("/impact", dependencies=[Depends(require_permission("impact:execute"))])
 async def analyze_impact(request: ImpactAnalysisRequest):
     """
     Analyze impact of events on commodities and markets.
@@ -400,7 +552,7 @@ class CypherRequest(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
 
 
-@app.post("/cypher")
+@app.post("/cypher", dependencies=[Depends(require_permission("rbac:admin"))])
 async def execute_cypher(request: CypherRequest):
     """
     Execute raw Cypher query.
@@ -422,7 +574,7 @@ async def execute_cypher(request: CypherRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/clear")
+@app.post("/clear", dependencies=[Depends(require_permission("rbac:admin"))])
 async def clear_all_data():
     """
     Clear all data from the knowledge graph.

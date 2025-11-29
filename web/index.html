@@ -17,6 +17,46 @@
     
     <!-- Theme Switcher - Loads dataset-specific theme -->
     <script src="static/js/theme-switcher.js"></script>
+    
+    <!-- Authentication Check -->
+    <script>
+        // Check if user is authenticated
+        const token = localStorage.getItem('token');
+        if (!token) {
+            // Redirect to login page
+            window.location.href = '/login.html';
+        }
+        
+        // Helper function to make authenticated API calls
+        async function authenticatedFetch(url, options = {}) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            options.headers = options.headers || {};
+            options.headers['Authorization'] = `Bearer ${token}`;
+            
+            const response = await fetch(url, options);
+            
+            // If unauthorized, redirect to login
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user_info');
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            return response;
+        }
+        
+        // Global helper to check permission
+        function hasPermission(permission) {
+            const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+            return userInfo.is_superuser || false;
+        }
+    </script>
 </head>
 <body>
     <!-- Header -->
@@ -38,6 +78,37 @@
                             <i class="fas fa-brain"></i>
                             <span class="status-dot" id="graphitiDot"></span>
                             <span id="graphitiText">Graphiti</span>
+                        </div>
+                    </div>
+                    <div class="user-menu" id="userMenu" style="position: relative; margin-left: 1rem;">
+                        <button class="btn-icon" id="userMenuBtn" title="User Menu">
+                            <i class="fas fa-user-circle"></i>
+                        </button>
+                        <div id="userMenuDropdown" style="
+                            display: none;
+                            position: absolute;
+                            top: 100%;
+                            right: 0;
+                            margin-top: 0.5rem;
+                            background: white;
+                            border: 1px solid var(--border-color);
+                            border-radius: 8px;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                            min-width: 200px;
+                            z-index: 1000;
+                        ">
+                            <div style="padding: 1rem; border-bottom: 1px solid var(--border-color);">
+                                <div style="font-weight: 600; color: var(--text-color);" id="userName">User</div>
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);" id="userRole">Role</div>
+                            </div>
+                            <div style="padding: 0.5rem;">
+                                <button class="btn btn-sm btn-secondary" id="adminBtn" style="width: 100%; justify-content: flex-start; margin-bottom: 0.25rem; display: none;">
+                                    <i class="fas fa-shield-alt"></i> Admin Panel
+                                </button>
+                                <button class="btn btn-sm btn-secondary" id="logoutBtn" style="width: 100%; justify-content: flex-start;">
+                                    <i class="fas fa-sign-out-alt"></i> Logout
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <button class="btn-icon" id="settingsBtn" title="Settings">
@@ -904,5 +975,74 @@ Brazil's soybean production reached 150 million metric tons in 2023, with export
 
     <!-- Scripts -->
     <script src="static/js/app.js"></script>
+    
+    <!-- Authentication & User Menu -->
+    <script>
+        // Load and display user information
+        async function loadUserInfo() {
+            try {
+                const response = await authenticatedFetch('/auth/me');
+                if (!response) return;
+                
+                const userData = await response.json();
+                
+                // Update user menu
+                document.getElementById('userName').textContent = userData.full_name || userData.username;
+                const roles = userData.roles && userData.roles.length > 0 ? userData.roles.join(', ') : 'User';
+                document.getElementById('userRole').textContent = roles;
+                
+                // Show admin button if user is superuser
+                if (userData.is_superuser) {
+                    document.getElementById('adminBtn').style.display = 'block';
+                }
+                
+                // Store full user data
+                localStorage.setItem('user_data', JSON.stringify(userData));
+            } catch (error) {
+                console.error('Failed to load user info:', error);
+            }
+        }
+        
+        // Toggle user menu dropdown
+        document.getElementById('userMenuBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dropdown = document.getElementById('userMenuDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('userMenuDropdown');
+            if (dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            }
+        });
+        
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', async function() {
+            try {
+                // Call logout endpoint (optional, since JWT is stateless)
+                await authenticatedFetch('/auth/logout', { method: 'POST' });
+            } catch (error) {
+                console.error('Logout error:', error);
+            } finally {
+                // Clear local storage
+                localStorage.removeItem('token');
+                localStorage.removeItem('user_info');
+                localStorage.removeItem('user_data');
+                
+                // Redirect to login
+                window.location.href = '/login.html';
+            }
+        });
+        
+        // Admin panel handler
+        document.getElementById('adminBtn').addEventListener('click', function() {
+            window.location.href = '/admin.html';
+        });
+        
+        // Load user info on page load
+        loadUserInfo();
+    </script>
 </body>
 </html>

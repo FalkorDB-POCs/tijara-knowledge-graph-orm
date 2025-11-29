@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Tijara Knowledge Graph</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="static/css/styles.css">
+    <style>
+        body {
+            background: #f5f7fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .admin-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .admin-header .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .admin-header h1 {
+            margin: 0;
+            font-size: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .admin-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .admin-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .admin-card h2 {
+            margin: 0 0 1.5rem 0;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .users-table th {
+            background: #f8f9fa;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .users-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .users-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .badge-admin {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-analyst {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .badge-trader {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .badge-engineer {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .badge-viewer {
+            background: #fce4ec;
+            color: #c2185b;
+        }
+
+        .badge-active {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .badge-inactive {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .permission-badge {
+            display: inline-block;
+            background: #e0e0e0;
+            color: #555;
+            padding: 0.2rem 0.5rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            margin: 0.1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .stat-icon.users {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .stat-icon.roles {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .stat-icon.permissions {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .stat-content h3 {
+            margin: 0;
+            font-size: 2rem;
+            color: #333;
+        }
+
+        .stat-content p {
+            margin: 0.25rem 0 0 0;
+            color: #888;
+            font-size: 0.875rem;
+        }
+
+        .loader {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Authentication Check -->
+    <script>
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login.html';
+        }
+
+        async function authenticatedFetch(url, options = {}) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            options.headers = options.headers || {};
+            options.headers['Authorization'] = `Bearer ${token}`;
+            
+            const response = await fetch(url, options);
+            
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user_info');
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            if (response.status === 403) {
+                alert('Access denied. Admin privileges required.');
+                window.location.href = '/';
+                return;
+            }
+            
+            return response;
+        }
+    </script>
+
+    <div class="admin-header">
+        <div class="container">
+            <h1>
+                <i class="fas fa-shield-alt"></i>
+                Admin Panel
+            </h1>
+            <button class="btn btn-secondary" onclick="window.location.href='/'">
+                <i class="fas fa-arrow-left"></i> Back to App
+            </button>
+        </div>
+    </div>
+
+    <div class="admin-container">
+        <!-- Statistics -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="loader">
+                <div class="spinner"></div>
+                <p>Loading statistics...</p>
+            </div>
+        </div>
+
+        <!-- Users List -->
+        <div class="admin-card">
+            <h2><i class="fas fa-users"></i> Users & Roles</h2>
+            <div id="usersContainer">
+                <div class="loader">
+                    <div class="spinner"></div>
+                    <p>Loading users...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="admin-card">
+            <h2><i class="fas fa-info-circle"></i> System Information</h2>
+            <p><strong>ORM Version:</strong> falkordb-orm 1.2.0</p>
+            <p><strong>Authentication:</strong> JWT (8-hour expiration)</p>
+            <p><strong>Permission Model:</strong> Role-Based Access Control (RBAC)</p>
+            <p style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                <strong>Note:</strong> This is a simplified admin interface for demonstration. 
+                In production, you would add user creation, role assignment, and permission management features.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Check if user is admin
+        async function checkAdminAccess() {
+            try {
+                const response = await authenticatedFetch('/auth/me');
+                if (!response) return;
+                
+                const userData = await response.json();
+                if (!userData.is_superuser) {
+                    alert('Access denied. Admin privileges required.');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Failed to check admin access:', error);
+                window.location.href = '/';
+            }
+        }
+
+        // Load RBAC statistics
+        async function loadStats() {
+            try {
+                // Query for statistics
+                const queries = [
+                    'MATCH (u:User) RETURN count(u) as count',
+                    'MATCH (r:Role) RETURN count(r) as count',
+                    'MATCH (p:Permission) RETURN count(p) as count'
+                ];
+
+                const counts = await Promise.all(queries.map(async (query) => {
+                    const response = await authenticatedFetch('/cypher', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query, parameters: {} })
+                    });
+                    if (!response) return 0;
+                    const data = await response.json();
+                    return data.results && data.results.length > 0 ? data.results[0][0] : 0;
+                }));
+
+                const statsHtml = `
+                    <div class="stat-card">
+                        <div class="stat-icon users">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>${counts[0]}</h3>
+                            <p>Total Users</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon roles">
+                            <i class="fas fa-user-tag"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>${counts[1]}</h3>
+                            <p>System Roles</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon permissions">
+                            <i class="fas fa-key"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>${counts[2]}</h3>
+                            <p>Permissions</p>
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById('statsGrid').innerHTML = statsHtml;
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+                document.getElementById('statsGrid').innerHTML = '<p>Failed to load statistics</p>';
+            }
+        }
+
+        // Load users
+        async function loadUsers() {
+            try {
+                const query = `
+                    MATCH (u:User)
+                    OPTIONAL MATCH (u)-[:HAS_ROLE]->(r:Role)
+                    OPTIONAL MATCH (r)-[:HAS_PERMISSION]->(p:Permission)
+                    RETURN u.username as username,
+                           u.full_name as full_name,
+                           u.email as email,
+                           u.is_superuser as is_superuser,
+                           u.is_active as is_active,
+                           collect(DISTINCT r.name) as roles,
+                           collect(DISTINCT p.name) as permissions
+                    ORDER BY u.username
+                `;
+
+                const response = await authenticatedFetch('/cypher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, parameters: {} })
+                });
+
+                if (!response) return;
+                const data = await response.json();
+
+                if (!data.results || data.results.length === 0) {
+                    document.getElementById('usersContainer').innerHTML = '<p>No users found</p>';
+                    return;
+                }
+
+                let tableHtml = `
+                    <table class="users-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Full Name</th>
+                                <th>Email</th>
+                                <th>Roles</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.results.forEach(row => {
+                    const username = row[0];
+                    const fullName = row[1];
+                    const email = row[2];
+                    const isSuperuser = row[3];
+                    const isActive = row[4];
+                    const roles = row[5].filter(r => r);
+                    const permissions = row[6].filter(p => p);
+
+                    const rolesBadges = roles.map(role => {
+                        const badgeClass = `badge badge-${role}`;
+                        return `<span class="${badgeClass}">${role}</span>`;
+                    }).join('');
+
+                    const statusBadge = isActive 
+                        ? '<span class="badge badge-active">Active</span>' 
+                        : '<span class="badge badge-inactive">Inactive</span>';
+
+                    const superuserBadge = isSuperuser 
+                        ? '<span class="badge badge-admin">Superuser</span>' 
+                        : '';
+
+                    tableHtml += `
+                        <tr>
+                            <td><strong>${username}</strong></td>
+                            <td>${fullName || '-'}</td>
+                            <td>${email || '-'}</td>
+                            <td>${rolesBadges || '-'} ${superuserBadge}</td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('usersContainer').innerHTML = tableHtml;
+            } catch (error) {
+                console.error('Failed to load users:', error);
+                document.getElementById('usersContainer').innerHTML = '<p>Failed to load users</p>';
+            }
+        }
+
+        // Initialize
+        checkAdminAccess();
+        loadStats();
+        loadUsers();
+    </script>
+</body>
+</html>

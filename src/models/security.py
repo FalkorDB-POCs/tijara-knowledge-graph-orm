@@ -20,10 +20,10 @@ class User:
     email: str = orm_property()
     password_hash: str = orm_property()  # Hashed password
     full_name: Optional[str] = orm_property()
-    is_active: bool = orm_property(default=True)
-    is_superuser: bool = orm_property(default=False)
-    created_at: datetime = orm_property(default_factory=datetime.now)
-    last_login: Optional[datetime] = orm_property()
+    is_active: bool = orm_property()
+    is_superuser: bool = orm_property()
+    created_at: str = orm_property()  # ISO format datetime string
+    last_login: Optional[str] = orm_property()  # ISO format datetime string
     
     # Relationships
     roles = relationship("HAS_ROLE", target="Role", direction="outgoing")
@@ -36,8 +36,8 @@ class Role:
     id: Optional[int] = generated_id()
     name: str = unique()
     description: Optional[str] = orm_property()
-    is_system: bool = orm_property(default=False)  # System roles cannot be deleted
-    created_at: datetime = orm_property(default_factory=datetime.now)
+    is_system: bool = orm_property()  # System roles cannot be deleted
+    created_at: str = orm_property()  # ISO format datetime string
     
     # Relationships
     permissions = relationship("HAS_PERMISSION", target="Permission", direction="outgoing")
@@ -54,7 +54,7 @@ class Permission:
     action: str = orm_property()  # e.g., "read", "write", "execute", "admin"
     description: Optional[str] = orm_property()
     scope: Optional[str] = orm_property()  # Optional scope filter (e.g., "commodity:wheat")
-    created_at: datetime = orm_property(default_factory=datetime.now)
+    created_at: str = orm_property()  # ISO format datetime string
 
 
 # Built-in system roles
