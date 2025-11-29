@@ -1,5 +1,5 @@
 """
-Security module for RBAC and authentication
+Security module for RBAC and authentication with data-level filtering
 """
 
 from .auth import (
@@ -11,6 +11,8 @@ from .auth import (
 )
 
 from .context import SecurityContext, ANONYMOUS_CONTEXT
+from .policy_manager import PolicyManager
+from .query_rewriter_enhanced import EnhancedQueryRewriter
 
 __all__ = [
     'hash_password',
@@ -19,5 +21,7 @@ __all__ = [
     'decode_access_token',
     'generate_session_id',
     'SecurityContext',
-    'ANONYMOUS_CONTEXT'
+    'ANONYMOUS_CONTEXT',
+    'PolicyManager',
+    'EnhancedQueryRewriter'
 ]

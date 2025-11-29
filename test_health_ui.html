@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Health Check Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        .status-dot { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .status-dot.online { background-color: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5); }
+        .status-dot.offline { background-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+        .test-section { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        pre { background: #f0f0f0; padding: 10px; overflow-x: auto; border-radius: 4px; }
+        button { padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        .status-item { margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Health Check UI Test</h1>
+    
+    <div class="test-section">
+        <h2>Status Indicators</h2>
+        <div class="status-item">
+            <span class="status-dot offline" id="falkordbDot"></span>
+            <span id="falkordbText">FalkorDB (ORM)</span>
+        </div>
+        <div class="status-item">
+            <span class="status-dot offline" id="graphitiDot"></span>
+            <span id="graphitiText">Graphiti</span>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <button onclick="testHealth()">Run Health Check</button>
+        <button onclick="checkElements()">Check DOM Elements</button>
+        <button onclick="clearConsole()">Clear Console</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Console Output</h2>
+        <pre id="console"></pre>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://localhost:8080';
+        const consoleEl = document.getElementById('console');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const line = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            consoleEl.textContent += line;
+            console.log(line);
+        }
+        
+        function clearConsole() {
+            consoleEl.textContent = '';
+        }
+        
+        function checkElements() {
+            log('Checking DOM elements...');
+            const falkordbDot = document.getElementById('falkordbDot');
+            const falkordbText = document.getElementById('falkordbText');
+            const graphitiDot = document.getElementById('graphitiDot');
+            const graphitiText = document.getElementById('graphitiText');
+            
+            log(`falkordbDot: ${falkordbDot ? 'Found' : 'NOT FOUND'}`, falkordbDot ? 'info' : 'error');
+            log(`falkordbText: ${falkordbText ? 'Found' : 'NOT FOUND'}`, falkordbText ? 'info' : 'error');
+            log(`graphitiDot: ${graphitiDot ? 'Found' : 'NOT FOUND'}`, graphitiDot ? 'info' : 'error');
+            log(`graphitiText: ${graphitiText ? 'Found' : 'NOT FOUND'}`, graphitiText ? 'info' : 'error');
+            
+            if (falkordbDot) {
+                log(`falkordbDot classes: ${falkordbDot.className}`);
+            }
+            if (graphitiDot) {
+                log(`graphitiDot classes: ${graphitiDot.className}`);
+            }
+        }
+        
+        async function testHealth() {
+            log('Starting health check test...');
+            log(`API Base URL: ${API_BASE_URL}`);
+            
+            try {
+                log('Fetching /health endpoint...');
+                const response = await fetch(`${API_BASE_URL}/health`);
+                log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    log(`HTTP error! status: ${response.status}`, 'error');
+                    return;
+                }
+                
+                const data = await response.json();
+                log(`Health check response: ${JSON.stringify(data, null, 2)}`);
+                
+                // Update FalkorDB status
+                const falkordbDot = document.getElementById('falkordbDot');
+                const falkordbText = document.getElementById('falkordbText');
+                
+                log(`Updating FalkorDB status (${data.falkordb})...`);
+                if (data.falkordb) {
+                    falkordbDot.classList.add('online');
+                    falkordbDot.classList.remove('offline');
+                    falkordbText.textContent = 'FalkorDB (ORM)';
+                    log('FalkorDB set to ONLINE', 'success');
+                } else {
+                    falkordbDot.classList.add('offline');
+                    falkordbDot.classList.remove('online');
+                    falkordbText.textContent = 'FalkorDB (ORM - Offline)';
+                    log('FalkorDB set to OFFLINE', 'warning');
+                }
+                
+                // Update Graphiti status
+                const graphitiDot = document.getElementById('graphitiDot');
+                const graphitiText = document.getElementById('graphitiText');
+                
+                log(`Updating Graphiti status (${data.graphiti})...`);
+                if (data.graphiti) {
+                    graphitiDot.classList.add('online');
+                    graphitiDot.classList.remove('offline');
+                    graphitiText.textContent = 'Graphiti';
+                    log('Graphiti set to ONLINE', 'success');
+                } else {
+                    graphitiDot.classList.add('offline');
+                    graphitiDot.classList.remove('online');
+                    graphitiText.textContent = 'Graphiti (Offline)';
+                    log('Graphiti set to OFFLINE', 'warning');
+                }
+                
+                log('Health check complete!', 'success');
+                
+            } catch (error) {
+                log(`Health check failed: ${error.message}`, 'error');
+                log(`Error details: ${error}`, 'error');
+                
+                // Mark both as offline on error
+                const falkordbDot = document.getElementById('falkordbDot');
+                const falkordbText = document.getElementById('falkordbText');
+                const graphitiDot = document.getElementById('graphitiDot');
+                const graphitiText = document.getElementById('graphitiText');
+                
+                falkordbDot.classList.add('offline');
+                falkordbDot.classList.remove('online');
+                falkordbText.textContent = 'FalkorDB (ORM - Error)';
+                
+                graphitiDot.classList.add('offline');
+                graphitiDot.classList.remove('online');
+                graphitiText.textContent = 'Graphiti (Error)';
+            }
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            log('Page loaded');
+            checkElements();
+            log('Running initial health check in 1 second...');
+            setTimeout(testHealth, 1000);
+        });
+    </script>
+</body>
+</html>

@@ -108,15 +108,15 @@ body {
 }
 
 .status-dot.online {
-    background: var(--success-color);
-    animation: none;
-    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    background: var(--success-color) !important;
+    animation: none !important;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
 }
 
 .status-dot.offline {
-    background: var(--danger-color);
-    animation: none;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+    background: var(--danger-color) !important;
+    animation: none !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
 }
 
 @keyframes pulse {

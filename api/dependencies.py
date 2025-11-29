@@ -5,10 +5,10 @@ Provides authentication and authorization dependencies for protecting API endpoi
 """
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.security.auth import decode_access_token
-from src.security.context import SecurityContext
+from src.security.context import SecurityContext, ANONYMOUS_CONTEXT
 
 # HTTP Bearer token security scheme
 security = HTTPBearer(auto_error=False)
@@ -163,3 +163,33 @@ def require_superuser():
         return user
     
     return superuser_checker
+
+
+async def get_security_context(
+    request: Request,
+    user: Optional[dict] = Depends(get_current_user_optional)
+) -> SecurityContext:
+    """
+    Dependency to get SecurityContext for the current request.
+    
+    Creates a SecurityContext with user data and graph connection for
+    data-level security filtering.
+    
+    Args:
+        request: FastAPI request object
+        user: Optional user data from JWT token
+        
+    Returns:
+        SecurityContext instance
+    """
+    if not user:
+        return ANONYMOUS_CONTEXT
+    
+    # Get graph connection from app state (will be set in main.py)
+    graph = getattr(request.app.state, 'rbac_graph', None)
+    
+    # Create SecurityContext with user data and graph
+    # Use lazy_load=True to avoid loading permissions during simple auth checks
+    context = SecurityContext(user_data=user, graph=graph, lazy_load=True)
+    
+    return context

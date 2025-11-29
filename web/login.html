@@ -285,6 +285,13 @@
                         </div>
                         <i class="fas fa-arrow-right demo-user-icon"></i>
                     </div>
+                    <div class="demo-user" data-username="emma_restricted" data-password="password123" style="border: 2px solid #ff9800;">
+                        <div class="demo-user-info">
+                            <div class="demo-user-name">🚫 emma_restricted</div>
+                            <div class="demo-user-role">⚠️ NO ACCESS to France data</div>
+                        </div>
+                        <i class="fas fa-arrow-right demo-user-icon"></i>
+                    </div>
                 </div>
             </div>
         </div>
@@ -326,7 +333,7 @@
             formData.append('password', passwordInput.value);
 
             try {
-                const response = await fetch('/auth/login', {
+                const response = await fetch('http://127.0.0.1:8080/auth/login', {
                     method: 'POST',
                     body: formData
                 });

@@ -12,9 +12,11 @@ from typing import Optional, List, Dict, Any
 import yaml
 import os
 
-from src.core.knowledge_graph import TijaraKnowledgeGraph
+from src.core.orm_knowledge_graph import ORMKnowledgeGraph
 from src.security.auth import create_access_token, verify_password
-from api.dependencies import get_current_user, require_permission
+from api.dependencies import get_current_user, require_permission, get_security_context
+from src.security.context import SecurityContext
+from src.security.query_rewriter_enhanced import EnhancedQueryRewriter
 
 # Load configuration
 config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')
@@ -41,13 +43,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize knowledge graph (singleton)
-kg = TijaraKnowledgeGraph(config)
+# Initialize separate RBAC graph connection
+from falkordb import FalkorDB
+rbac_db = FalkorDB(
+    host=config['rbac'].get('host', 'localhost'),
+    port=config['rbac'].get('port', 6379)
+)
+rbac_graph = rbac_db.select_graph(config['rbac']['graph_name'])
+
+# Initialize global knowledge graph for non-secured endpoints (health, stats, etc.)
+# Secured endpoints will create their own instance with SecurityContext per-request
+from src.security.context import ANONYMOUS_CONTEXT
+kg = ORMKnowledgeGraph(config, security_context=ANONYMOUS_CONTEXT)
+
+# Store RBAC graph in app state for dependency injection
+app.state.rbac_graph = rbac_graph
+app.state.config = config
 
 # Mount static files for web interface
 web_dir = os.path.join(os.path.dirname(__file__), '..', 'web')
 if os.path.exists(web_dir):
     app.mount("/static", StaticFiles(directory=os.path.join(web_dir, "static")), name="static")
+
+
+# ========== Helper Function ==========
+
+def get_knowledge_graph(security_context: SecurityContext) -> ORMKnowledgeGraph:
+    """
+    Create knowledge graph instance with security context.
+    
+    Args:
+        security_context: Security context for data-level filtering
+        
+    Returns:
+        ORMKnowledgeGraph instance
+    """
+    return ORMKnowledgeGraph(config, security_context=security_context)
 
 
 # ========== Request/Response Models ==========
@@ -121,7 +152,7 @@ async def login(username: str = Form(...), password: str = Form(...)):
                u.email as email,
                id(u) as user_id
         """
-        result = kg.falkordb.graph.query(query, {'username': username})
+        result = rbac_graph.query(query, {'username': username})
         
         if not result.result_set:
             raise HTTPException(
@@ -201,7 +232,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
                collect(DISTINCT r.name) as roles,
                collect(DISTINCT p.name) as permissions
         """
-        result = kg.falkordb.graph.query(query, {'username': username})
+        result = rbac_graph.query(query, {'username': username})
         
         if not result.result_set:
             raise HTTPException(status_code=404, detail="User not found")
@@ -285,6 +316,16 @@ async def admin_page():
         raise HTTPException(status_code=404, detail="Admin page not found")
 
 
+@app.get("/test_health.html")
+async def test_health_page():
+    """Serve the test health page."""
+    test_html = os.path.join(os.path.dirname(__file__), '..', 'test_health_ui.html')
+    if os.path.exists(test_html):
+        return FileResponse(test_html)
+    else:
+        raise HTTPException(status_code=404, detail="Test page not found")
+
+
 @app.get("/config")
 async def get_config():
     """Get system configuration including active dataset."""
@@ -317,10 +358,14 @@ async def get_statistics():
 @app.post("/query", response_model=QueryResponse)
 async def query_natural_language(
     request: QueryRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    security_context: SecurityContext = Depends(get_security_context)
 ):
     """
     Answer natural language questions using GraphRAG.
+    
+    The query respects data-level security and only returns results
+    the user is permitted to see.
     
     Example:
     ```json
@@ -331,7 +376,10 @@ async def query_natural_language(
     ```
     """
     try:
-        result = await kg.query_natural_language(
+        # Use security-aware knowledge graph instance
+        user_kg = get_knowledge_graph(security_context)
+        
+        result = await user_kg.query_natural_language(
             question=request.question,
             context=request.context,
             return_sources=request.return_sources
@@ -539,6 +587,18 @@ async def search_entities(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/debug/filters")
+async def debug_filters(label: str = "Geography", security_context: SecurityContext = Depends(get_security_context)):
+    try:
+        return {
+            "user": security_context.username,
+            "is_superuser": security_context.is_superuser,
+            "roles": security_context.get_roles(),
+            "row_filters": security_context.get_row_filters(label, 'read')
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/schema")
 async def get_schema():
     """Get ontology schema for exploration."""
@@ -572,12 +632,17 @@ class CypherRequest(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
 
 
-@app.post("/cypher", dependencies=[Depends(require_permission("rbac:admin"))])
-async def execute_cypher(request: CypherRequest):
+@app.post("/cypher")
+async def execute_cypher(
+    request: CypherRequest,
+    current_user: dict = Depends(get_current_user),
+    security_context: SecurityContext = Depends(get_security_context)
+):
     """
-    Execute raw Cypher query.
+    Execute Cypher query with data-level security filtering.
     
-    ⚠️ This endpoint should be restricted in production.
+    The query will be automatically filtered based on the user's permissions.
+    Superusers bypass all filtering.
     
     Example:
     ```json
@@ -588,8 +653,26 @@ async def execute_cypher(request: CypherRequest):
     ```
     """
     try:
-        results = kg.falkordb.execute_query(request.query)
-        return {"query": request.query, "results": results}
+        # Create knowledge graph instance with user's security context
+        user_kg = get_knowledge_graph(security_context)
+        
+        # Rewrite query with data-level filtering for non-superusers
+        rewritten_query = request.query
+        rewritten_params = request.parameters or {}
+        if not security_context.is_superuser:
+            rewriter = EnhancedQueryRewriter(security_context)
+            rewritten_query, rewritten_params = rewriter.rewrite(request.query, rewritten_params)
+        
+        # Execute rewritten query
+        result = user_kg.graph.query(rewritten_query, rewritten_params)
+        
+        # Convert result set
+        results = []
+        if result.result_set:
+            for row in result.result_set:
+                results.append(list(row))
+        
+        return {"query": rewritten_query, "results": results}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -608,6 +691,893 @@ async def clear_all_data():
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== RBAC Management Endpoints ==========
+
+class UserCreateRequest(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    is_superuser: bool = False
+
+
+class UserUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_superuser: Optional[bool] = None
+
+
+class RoleAssignmentRequest(BaseModel):
+    username: str
+    role_name: str
+
+
+@app.get("/admin/users")
+async def list_users(current_user: dict = Depends(get_current_user)):
+    """
+    List all users with their roles and permissions.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        query = """
+        MATCH (u:User)
+        OPTIONAL MATCH (u)-[:HAS_ROLE]->(r:Role)
+        OPTIONAL MATCH (r)-[:HAS_PERMISSION]->(p:Permission)
+        RETURN u.username as username,
+               u.full_name as full_name,
+               u.email as email,
+               u.is_superuser as is_superuser,
+               u.is_active as is_active,
+               u.created_at as created_at,
+               collect(DISTINCT r.name) as roles,
+               collect(DISTINCT p.name) as permissions
+        ORDER BY u.username
+        """
+        result = rbac_graph.query(query)
+        
+        users = []
+        for row in result.result_set:
+            users.append({
+                "username": row[0],
+                "full_name": row[1],
+                "email": row[2],
+                "is_superuser": row[3],
+                "is_active": row[4],
+                "created_at": row[5],
+                "roles": [r for r in row[6] if r],
+                "permissions": [p for p in row[7] if p]
+            })
+        
+        return {"users": users}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+
+
+@app.get("/admin/roles")
+async def list_roles(current_user: dict = Depends(get_current_user)):
+    """
+    List all roles with their permissions.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        query = """
+        MATCH (r:Role)
+        OPTIONAL MATCH (r)-[:HAS_PERMISSION]->(p:Permission)
+        RETURN r.name as name,
+               r.description as description,
+               collect(DISTINCT p.name) as permissions
+        ORDER BY r.name
+        """
+        result = rbac_graph.query(query)
+        
+        roles = []
+        for row in result.result_set:
+            roles.append({
+                "name": row[0],
+                "description": row[1],
+                "permissions": [p for p in row[2] if p]
+            })
+        
+        return {"roles": roles}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list roles: {str(e)}")
+
+
+@app.get("/admin/permissions")
+async def list_permissions(current_user: dict = Depends(get_current_user)):
+    """
+    List all available permissions.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        query = """
+        MATCH (p:Permission)
+        RETURN p.name as name,
+               p.description as description,
+               p.resource as resource,
+               p.action as action,
+               p.grant_type as grant_type,
+               p.node_label as node_label,
+               p.edge_type as edge_type,
+               p.property_name as property_name,
+               p.property_filter as property_filter,
+               p.attribute_conditions as attribute_conditions
+        ORDER BY p.name
+        """
+        result = rbac_graph.query(query)
+        
+        permissions = []
+        for row in result.result_set:
+            permissions.append({
+                "name": row[0],
+                "description": row[1],
+                "resource": row[2],
+                "action": row[3],
+                "grant_type": row[4],
+                "node_label": row[5],
+                "edge_type": row[6],
+                "property_name": row[7],
+                "property_filter": row[8],
+                "attribute_conditions": row[9]
+            })
+        
+        return {"permissions": permissions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list permissions: {str(e)}")
+
+
+@app.post("/admin/users")
+async def create_user(
+    request: UserCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a new user.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        from src.security.auth import hash_password
+        from datetime import datetime
+        
+        # Check if user already exists
+        check_query = "MATCH (u:User {username: $username}) RETURN u"
+        result = rbac_graph.query(check_query, {'username': request.username})
+        if result.result_set:
+            raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Create user
+        password_hash = hash_password(request.password)
+        create_query = """
+        CREATE (u:User {
+            username: $username,
+            password_hash: $password_hash,
+            full_name: $full_name,
+            email: $email,
+            is_superuser: $is_superuser,
+            is_active: true,
+            created_at: $created_at
+        })
+        RETURN u.username as username
+        """
+        
+        result = rbac_graph.query(create_query, {
+            'username': request.username,
+            'password_hash': password_hash,
+            'full_name': request.full_name,
+            'email': request.email,
+            'is_superuser': request.is_superuser,
+            'created_at': datetime.now().isoformat()
+        })
+        
+        return {
+            "status": "success",
+            "message": f"User '{request.username}' created successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+
+@app.put("/admin/users/{username}")
+async def update_user(
+    username: str,
+    request: UserUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update user information.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Build update query dynamically based on provided fields
+        updates = []
+        params = {'username': username}
+        
+        if request.full_name is not None:
+            updates.append("u.full_name = $full_name")
+            params['full_name'] = request.full_name
+        
+        if request.email is not None:
+            updates.append("u.email = $email")
+            params['email'] = request.email
+        
+        if request.is_active is not None:
+            updates.append("u.is_active = $is_active")
+            params['is_active'] = request.is_active
+        
+        if request.is_superuser is not None:
+            updates.append("u.is_superuser = $is_superuser")
+            params['is_superuser'] = request.is_superuser
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        update_query = f"""
+        MATCH (u:User {{username: $username}})
+        SET {', '.join(updates)}
+        RETURN u.username as username
+        """
+        
+        result = rbac_graph.query(update_query, params)
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "status": "success",
+            "message": f"User '{username}' updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
+
+
+@app.post("/admin/users/{username}/roles")
+async def assign_role(
+    username: str,
+    request: RoleAssignmentRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Assign a role to a user.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Check if relationship already exists
+        check_query = """
+        MATCH (u:User {username: $username})-[rel:HAS_ROLE]->(r:Role {name: $role_name})
+        RETURN rel
+        """
+        result = rbac_graph.query(check_query, {
+            'username': username,
+            'role_name': request.role_name
+        })
+        
+        if result.result_set:
+            raise HTTPException(status_code=400, detail="User already has this role")
+        
+        # Create relationship
+        assign_query = """
+        MATCH (u:User {username: $username})
+        MATCH (r:Role {name: $role_name})
+        CREATE (u)-[:HAS_ROLE]->(r)
+        RETURN u.username as username, r.name as role
+        """
+        
+        result = rbac_graph.query(assign_query, {
+            'username': username,
+            'role_name': request.role_name
+        })
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="User or role not found")
+        
+        return {
+            "status": "success",
+            "message": f"Role '{request.role_name}' assigned to user '{username}'"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign role: {str(e)}")
+
+
+@app.delete("/admin/users/{username}/roles/{role_name}")
+async def remove_role(
+    username: str,
+    role_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Remove a role from a user.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        remove_query = """
+        MATCH (u:User {username: $username})-[rel:HAS_ROLE]->(r:Role {name: $role_name})
+        DELETE rel
+        RETURN u.username as username, r.name as role
+        """
+        
+        result = rbac_graph.query(remove_query, {
+            'username': username,
+            'role_name': role_name
+        })
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="User, role, or assignment not found")
+        
+        return {
+            "status": "success",
+            "message": f"Role '{role_name}' removed from user '{username}'"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove role: {str(e)}")
+
+
+@app.delete("/admin/users/{username}")
+async def delete_user(
+    username: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a user.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    # Prevent deleting yourself
+    if username == current_user.get('sub'):
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    try:
+        delete_query = """
+        MATCH (u:User {username: $username})
+        DETACH DELETE u
+        RETURN count(u) as deleted
+        """
+        
+        result = rbac_graph.query(delete_query, {'username': username})
+        
+        if not result.result_set or result.result_set[0][0] == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "status": "success",
+            "message": f"User '{username}' deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+
+# ========== Role Management Endpoints ==========
+
+class RoleCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    permissions: List[str] = []
+
+
+class RoleUpdateRequest(BaseModel):
+    description: Optional[str] = None
+
+
+@app.post("/admin/roles")
+async def create_role(
+    request: RoleCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a new role.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        from datetime import datetime
+        
+        # Check if role already exists
+        check_query = "MATCH (r:Role {name: $name}) RETURN r"
+        result = rbac_graph.query(check_query, {'name': request.name})
+        if result.result_set:
+            raise HTTPException(status_code=400, detail="Role already exists")
+        
+        # Create role
+        create_query = """
+        CREATE (r:Role {
+            name: $name,
+            description: $description,
+            is_system: false,
+            created_at: $created_at
+        })
+        RETURN id(r) as id
+        """
+        
+        result = rbac_graph.query(create_query, {
+            'name': request.name,
+            'description': request.description,
+            'created_at': datetime.now().isoformat()
+        })
+        
+        role_id = result.result_set[0][0] if result.result_set else None
+        
+        # Assign permissions to role
+        for perm_name in request.permissions:
+            link_query = """
+            MATCH (r:Role), (p:Permission {name: $perm_name})
+            WHERE id(r) = $role_id
+            MERGE (r)-[:HAS_PERMISSION]->(p)
+            """
+            rbac_graph.query(link_query, {
+                'role_id': role_id,
+                'perm_name': perm_name
+            })
+        
+        return {
+            "status": "success",
+            "message": f"Role '{request.name}' created successfully with {len(request.permissions)} permissions"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create role: {str(e)}")
+
+
+@app.put("/admin/roles/{role_name}")
+async def update_role(
+    role_name: str,
+    request: RoleUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update role information.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Check if role is system role
+        check_query = "MATCH (r:Role {name: $name}) RETURN r.is_system as is_system"
+        result = rbac_graph.query(check_query, {'name': role_name})
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="Role not found")
+        
+        is_system = result.result_set[0][0]
+        if is_system:
+            raise HTTPException(status_code=400, detail="Cannot modify system roles")
+        
+        # Update role
+        update_query = """
+        MATCH (r:Role {name: $name})
+        SET r.description = $description
+        RETURN r.name as name
+        """
+        
+        result = rbac_graph.query(update_query, {
+            'name': role_name,
+            'description': request.description
+        })
+        
+        return {
+            "status": "success",
+            "message": f"Role '{role_name}' updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
+
+
+@app.post("/admin/roles/{role_name}/permissions")
+async def assign_permission_to_role(
+    role_name: str,
+    permission_name: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Assign a permission to a role.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Check if relationship already exists
+        check_query = """
+        MATCH (r:Role {name: $role_name})-[rel:HAS_PERMISSION]->(p:Permission {name: $permission_name})
+        RETURN rel
+        """
+        result = rbac_graph.query(check_query, {
+            'role_name': role_name,
+            'permission_name': permission_name
+        })
+        
+        if result.result_set:
+            raise HTTPException(status_code=400, detail="Role already has this permission")
+        
+        # Create relationship
+        assign_query = """
+        MATCH (r:Role {name: $role_name})
+        MATCH (p:Permission {name: $permission_name})
+        CREATE (r)-[:HAS_PERMISSION]->(p)
+        RETURN r.name as role, p.name as permission
+        """
+        
+        result = rbac_graph.query(assign_query, {
+            'role_name': role_name,
+            'permission_name': permission_name
+        })
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="Role or permission not found")
+        
+        return {
+            "status": "success",
+            "message": f"Permission '{permission_name}' assigned to role '{role_name}'"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign permission: {str(e)}")
+
+
+@app.delete("/admin/roles/{role_name}/permissions/{permission_name}")
+async def remove_permission_from_role(
+    role_name: str,
+    permission_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Remove a permission from a role.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        remove_query = """
+        MATCH (r:Role {name: $role_name})-[rel:HAS_PERMISSION]->(p:Permission {name: $permission_name})
+        DELETE rel
+        RETURN r.name as role, p.name as permission
+        """
+        
+        result = rbac_graph.query(remove_query, {
+            'role_name': role_name,
+            'permission_name': permission_name
+        })
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="Role, permission, or assignment not found")
+        
+        return {
+            "status": "success",
+            "message": f"Permission '{permission_name}' removed from role '{role_name}'"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove permission: {str(e)}")
+
+
+@app.delete("/admin/roles/{role_name}")
+async def delete_role(
+    role_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a role.
+    Requires superuser access. Cannot delete system roles.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Check if role is system role
+        check_query = "MATCH (r:Role {name: $name}) RETURN r.is_system as is_system"
+        result = rbac_graph.query(check_query, {'name': role_name})
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="Role not found")
+        
+        is_system = result.result_set[0][0]
+        if is_system:
+            raise HTTPException(status_code=400, detail="Cannot delete system roles")
+        
+        # Delete role
+        delete_query = """
+        MATCH (r:Role {name: $name})
+        DETACH DELETE r
+        RETURN count(r) as deleted
+        """
+        
+        result = rbac_graph.query(delete_query, {'name': role_name})
+        
+        return {
+            "status": "success",
+            "message": f"Role '{role_name}' deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete role: {str(e)}")
+
+
+# ========== Permission Management Endpoints ==========
+
+class PermissionCreateRequest(BaseModel):
+    name: str
+    resource: str
+    action: str
+    description: Optional[str] = None
+    grant_type: str = "GRANT"
+    node_label: Optional[str] = None
+    edge_type: Optional[str] = None
+    property_name: Optional[str] = None
+    property_filter: Optional[str] = None
+    attribute_conditions: Optional[str] = None
+
+
+class PermissionUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    grant_type: Optional[str] = None
+    node_label: Optional[str] = None
+    edge_type: Optional[str] = None
+    property_name: Optional[str] = None
+    property_filter: Optional[str] = None
+    attribute_conditions: Optional[str] = None
+
+
+@app.post("/admin/permissions")
+async def create_permission(
+    request: PermissionCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a new permission.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        from datetime import datetime
+        
+        # Check if permission already exists
+        check_query = "MATCH (p:Permission {name: $name}) RETURN p"
+        result = rbac_graph.query(check_query, {'name': request.name})
+        if result.result_set:
+            raise HTTPException(status_code=400, detail="Permission already exists")
+        
+        # Create permission
+        create_query = """
+        CREATE (p:Permission {
+            name: $name,
+            resource: $resource,
+            action: $action,
+            description: $description,
+            grant_type: $grant_type,
+            node_label: $node_label,
+            edge_type: $edge_type,
+            property_name: $property_name,
+            property_filter: $property_filter,
+            attribute_conditions: $attribute_conditions,
+            created_at: $created_at
+        })
+        RETURN p.name as name
+        """
+        
+        result = rbac_graph.query(create_query, {
+            'name': request.name,
+            'resource': request.resource,
+            'action': request.action,
+            'description': request.description,
+            'grant_type': request.grant_type,
+            'node_label': request.node_label,
+            'edge_type': request.edge_type,
+            'property_name': request.property_name,
+            'property_filter': request.property_filter,
+            'attribute_conditions': request.attribute_conditions,
+            'created_at': datetime.now().isoformat()
+        })
+        
+        return {
+            "status": "success",
+            "message": f"Permission '{request.name}' created successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create permission: {str(e)}")
+
+
+@app.put("/admin/permissions/{permission_name}")
+async def update_permission(
+    permission_name: str,
+    request: PermissionUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update permission information.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Build update query dynamically
+        updates = []
+        params = {'name': permission_name}
+        
+        if request.description is not None:
+            updates.append("p.description = $description")
+            params['description'] = request.description
+        
+        if request.grant_type is not None:
+            updates.append("p.grant_type = $grant_type")
+            params['grant_type'] = request.grant_type
+        
+        if request.node_label is not None:
+            updates.append("p.node_label = $node_label")
+            params['node_label'] = request.node_label
+        
+        if request.edge_type is not None:
+            updates.append("p.edge_type = $edge_type")
+            params['edge_type'] = request.edge_type
+        
+        if request.property_name is not None:
+            updates.append("p.property_name = $property_name")
+            params['property_name'] = request.property_name
+        
+        if request.property_filter is not None:
+            updates.append("p.property_filter = $property_filter")
+            params['property_filter'] = request.property_filter
+        
+        if request.attribute_conditions is not None:
+            updates.append("p.attribute_conditions = $attribute_conditions")
+            params['attribute_conditions'] = request.attribute_conditions
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        update_query = f"""
+        MATCH (p:Permission {{name: $name}})
+        SET {', '.join(updates)}
+        RETURN p.name as name
+        """
+        
+        result = rbac_graph.query(update_query, params)
+        
+        if not result.result_set:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        
+        return {
+            "status": "success",
+            "message": f"Permission '{permission_name}' updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update permission: {str(e)}")
+
+
+@app.delete("/admin/permissions/{permission_name}")
+async def delete_permission(
+    permission_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a permission.
+    Requires superuser access.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        delete_query = """
+        MATCH (p:Permission {name: $name})
+        DETACH DELETE p
+        RETURN count(p) as deleted
+        """
+        
+        result = rbac_graph.query(delete_query, {'name': permission_name})
+        
+        if not result.result_set or result.result_set[0][0] == 0:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        
+        return {
+            "status": "success",
+            "message": f"Permission '{permission_name}' deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete permission: {str(e)}")
+
+
+@app.get("/admin/schema-metadata")
+async def get_schema_metadata(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get schema metadata for admin panel dropdowns.
+    Returns available node labels, edge types, and properties.
+    """
+    if not current_user.get('is_superuser', False):
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    
+    try:
+        # Get all node labels from the application graph
+        labels_query = "CALL db.labels()"
+        labels_result = kg.falkordb.graph.query(labels_query)
+        
+        node_labels = []
+        if labels_result.result_set:
+            node_labels = [row[0] for row in labels_result.result_set if row[0] not in ['User', 'Role', 'Permission']]
+        
+        # Get all relationship types
+        rels_query = "CALL db.relationshipTypes()"
+        rels_result = kg.falkordb.graph.query(rels_query)
+        
+        edge_types = []
+        if rels_result.result_set:
+            edge_types = [row[0] for row in rels_result.result_set if row[0] not in ['HAS_ROLE', 'HAS_PERMISSION']]
+        
+        # Get properties from a sample of nodes (top 100 to avoid performance issues)
+        props_query = """
+        MATCH (n)
+        WHERE NOT n:User AND NOT n:Role AND NOT n:Permission
+        WITH n LIMIT 100
+        UNWIND keys(n) as key
+        RETURN DISTINCT key
+        ORDER BY key
+        """
+        props_result = kg.falkordb.graph.query(props_query)
+        
+        properties = []
+        if props_result.result_set:
+            properties = [row[0] for row in props_result.result_set]
+        
+        return {
+            "node_labels": sorted(node_labels),
+            "edge_types": sorted(edge_types),
+            "properties": sorted(properties)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schema metadata: {str(e)}")
 
 
 # ========== Startup/Shutdown Events ==========

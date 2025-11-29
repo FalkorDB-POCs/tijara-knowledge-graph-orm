@@ -1,7 +1,7 @@
 // Tijara Knowledge Graph - Web Interface JavaScript
 
 // Configuration
-let API_BASE_URL = localStorage.getItem('apiBaseUrl') || 'http://localhost:8080';
+let API_BASE_URL = localStorage.getItem('apiBaseUrl') || 'http://127.0.0.1:8080';
 
 // Utility Functions
 const $ = (id) => document.getElementById(id);
@@ -48,15 +48,31 @@ function hideResult(resultId) {
 async function apiCall(endpoint, options = {}) {
     try {
         const headers = { ...(options.headers || {}) };
+        
+        // Add authentication token if available
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         // Only set Content-Type for non-GET requests to avoid unnecessary CORS preflight
         const method = (options.method || 'GET').toUpperCase();
         if (method !== 'GET' && !headers['Content-Type']) {
             headers['Content-Type'] = 'application/json';
         }
+        
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
             headers
         });
+        
+        // If unauthorized, redirect to login
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user_info');
+            window.location.href = '/login.html';
+            return;
+        }
         
         if (!response.ok) {
             const error = await response.json();
@@ -100,14 +116,22 @@ function switchTab(tabName) {
 
 // Health Check
 async function checkHealth() {
+    console.log('[Health Check] Starting health check...');
+    console.log('[Health Check] API_BASE_URL:', API_BASE_URL);
     try {
         const data = await apiCall('/health');
-        console.log('Health check response:', data);
+        console.log('[Health Check] Response received:', data);
         
         // Update FalkorDB status
         const falkordbDot = $('falkordbDot');
         const falkordbText = $('falkordbText');
-        console.log('FalkorDB element:', falkordbDot, 'Status:', data.falkordb);
+        console.log('[Health Check] FalkorDB element:', falkordbDot);
+        console.log('[Health Check] FalkorDB status from API:', data.falkordb);
+        
+        if (!falkordbDot) {
+            console.error('[Health Check] ERROR: falkordbDot element not found!');
+            return;
+        }
         if (data.falkordb) {
             falkordbDot.classList.add('online');
             falkordbDot.classList.remove('offline');
@@ -1413,8 +1437,147 @@ function exportToCSV(tableId) {
     showToast('CSV exported successfully!');
 }
 
+// User Menu
+async function loadUserInfo() {
+    console.log('[UserMenu] Loading user info...');
+    try {
+        // Get user info from API
+        const userInfo = await apiCall('/auth/me');
+        console.log('[UserMenu] User info loaded:', userInfo);
+        
+        // Store in localStorage
+        localStorage.setItem('user_info', JSON.stringify(userInfo));
+        
+        // Update UI
+        displayUserInfo(userInfo);
+    } catch (error) {
+        console.error('[UserMenu] Failed to load user info:', error);
+        // Try to use cached user info
+        const cachedInfo = localStorage.getItem('user_info');
+        if (cachedInfo) {
+            console.log('[UserMenu] Using cached user info');
+            displayUserInfo(JSON.parse(cachedInfo));
+        } else {
+            console.error('[UserMenu] No cached user info available');
+            // Set default text
+            const headerUserName = $('headerUserName');
+            if (headerUserName) {
+                headerUserName.textContent = 'Error loading user';
+            }
+        }
+    }
+}
+
+function displayUserInfo(userInfo) {
+    const displayName = userInfo.full_name || userInfo.username;
+    let roleText = 'User';
+    
+    if (userInfo.is_superuser) {
+        roleText = 'Administrator';
+    } else if (userInfo.roles && userInfo.roles.length > 0) {
+        roleText = userInfo.roles.join(', ');
+    }
+    
+    // Update header display
+    const headerUserName = $('headerUserName');
+    if (headerUserName) {
+        headerUserName.textContent = displayName;
+    }
+    
+    const headerUserRole = $('headerUserRole');
+    if (headerUserRole) {
+        headerUserRole.textContent = roleText;
+    }
+    
+    // Update dropdown user name
+    const userNameEl = $('userName');
+    if (userNameEl) {
+        userNameEl.textContent = displayName;
+    }
+    
+    // Update dropdown user role
+    const userRoleEl = $('userRole');
+    if (userRoleEl) {
+        userRoleEl.textContent = roleText;
+    }
+    
+    // Show admin button for superusers
+    const adminBtn = $('adminBtn');
+    if (adminBtn && userInfo.is_superuser) {
+        adminBtn.style.display = 'flex';
+    }
+}
+
+function initUserMenu() {
+    const userMenu = $('userMenu');
+    const userMenuBtn = $('userMenuBtn');
+    const userMenuDropdown = $('userMenuDropdown');
+    const logoutBtn = $('logoutBtn');
+    const adminBtn = $('adminBtn');
+
+    if (!userMenu || !userMenuBtn || !userMenuDropdown || !logoutBtn) {
+        console.error('User menu elements not found');
+        return;
+    }
+
+    let isOpen = false;
+    const openMenu = () => {
+        isOpen = true;
+        userMenuDropdown.style.display = 'block';
+        userMenuDropdown.style.zIndex = 1000;
+        console.log('User menu opened');
+    };
+    const closeMenu = () => {
+        isOpen = false;
+        userMenuDropdown.style.display = 'none';
+        console.log('User menu closed');
+    };
+
+    // Toggle dropdown
+    userMenuBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isOpen) closeMenu(); else openMenu();
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!isOpen) return;
+        if (!userMenu.contains(e.target)) {
+            closeMenu();
+        }
+    });
+
+    // Prevent closing when clicking inside dropdown
+    userMenuDropdown.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
+    // Logout handler
+    logoutBtn.addEventListener('click', async () => {
+        try {
+            await apiCall('/auth/logout', { method: 'POST' });
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            // Clear local storage and redirect
+            localStorage.removeItem('token');
+            localStorage.removeItem('user_info');
+            window.location.href = '/login.html';
+        }
+    });
+
+    // Admin panel handler
+    if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+            window.location.href = '/admin.html';
+        });
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[App] DOMContentLoaded - Initializing app...');
     initNavigation();
     initCopilot();
     initAnalytics();
@@ -1422,7 +1585,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initImpact();
     initDiscovery();
     initSettings();
+    initUserMenu();
     
+    // Load user info
+    loadUserInfo();
+    
+    console.log('[App] Calling checkHealth() for the first time...');
     // Check health on load
     checkHealth();
     

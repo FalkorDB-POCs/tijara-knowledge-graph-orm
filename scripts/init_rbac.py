@@ -15,11 +15,20 @@ from datetime import datetime
 import yaml
 
 
-def init_rbac(graph_name='ldc_graph'):
-    """Initialize RBAC data in the graph"""
+def init_rbac(graph_name=None):
+    """Initialize RBAC data in separate RBAC graph"""
+    
+    # Load config to get RBAC graph name
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Use configured RBAC graph or provided graph_name
+    if graph_name is None:
+        graph_name = config['rbac']['graph_name']
     
     # Connect to FalkorDB
-    print(f"Connecting to FalkorDB graph: {graph_name}")
+    print(f"Connecting to FalkorDB RBAC graph: {graph_name}")
     db = FalkorDB(host='localhost', port=6379)
     graph = db.select_graph(graph_name)
     
@@ -36,6 +45,12 @@ def init_rbac(graph_name='ldc_graph'):
         SET p.resource = $resource,
             p.action = $action,
             p.description = $description,
+            p.grant_type = $grant_type,
+            p.node_label = $node_label,
+            p.edge_type = $edge_type,
+            p.property_name = $property_name,
+            p.property_filter = $property_filter,
+            p.attribute_conditions = $attribute_conditions,
             p.created_at = $created_at
         RETURN id(p) as id
         """
@@ -44,12 +59,32 @@ def init_rbac(graph_name='ldc_graph'):
             'resource': perm_def['resource'],
             'action': perm_def['action'],
             'description': perm_def['description'],
+            'grant_type': perm_def.get('grant_type', 'GRANT'),
+            'node_label': perm_def.get('node_label'),
+            'edge_type': perm_def.get('edge_type'),
+            'property_name': perm_def.get('property_name'),
+            'property_filter': perm_def.get('property_filter'),
+            'attribute_conditions': perm_def.get('attribute_conditions'),
             'created_at': datetime.now().isoformat()
         }
         result = graph.query(query, params)
         perm_id = result.result_set[0][0] if result.result_set else None
         permission_map[perm_name] = perm_id
-        print(f"   ✓ Created permission: {perm_name}")
+        
+        # Show simplified output for basic permissions, detailed for attribute-based
+        if perm_def.get('node_label') or perm_def.get('edge_type') or perm_def.get('attribute_conditions'):
+            details = []
+            if perm_def.get('node_label'):
+                details.append(f"label={perm_def['node_label']}")
+            if perm_def.get('edge_type'):
+                details.append(f"type={perm_def['edge_type']}")
+            if perm_def.get('property_filter'):
+                details.append(f"filter={perm_def['property_filter'][:30]}...")
+            if perm_def.get('attribute_conditions'):
+                details.append(f"where={perm_def['attribute_conditions'][:40]}...")
+            print(f"   ✓ {perm_name} ({', '.join(details)})")
+        else:
+            print(f"   ✓ {perm_name}")
     
     # Step 2: Create Roles
     print("\n2. Creating System Roles...")
@@ -215,7 +250,7 @@ def init_rbac(graph_name='ldc_graph'):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Initialize RBAC data in FalkorDB')
-    parser.add_argument('--graph', default='ldc_graph', help='Graph name (default: ldc_graph)')
+    parser.add_argument('--graph', default=None, help='Graph name (default: from config)')
     args = parser.parse_args()
     
     init_rbac(args.graph)

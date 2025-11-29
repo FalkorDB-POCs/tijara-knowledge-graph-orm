@@ -10,6 +10,9 @@ import logging
 import falkordb
 from ..models import Geography, Commodity, ProductionArea, BalanceSheet, Component, Indicator
 from ..repositories import GeographyRepository, CommodityRepository, BalanceSheetRepository
+from ..repositories.secure_repository_factory import create_secure_repository
+from ..security.context import SecurityContext
+from ..security.policy_manager import PolicyManager
 from .graphiti_engine import GraphitiEngine
 from ..ontology.schema import OntologySchema
 from ..analytics.graph_algorithms import GraphAnalytics
@@ -27,14 +30,16 @@ class ORMKnowledgeGraph:
     entity models and repositories instead of raw Cypher queries.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], security_context: Optional[SecurityContext] = None):
         """
         Initialize the ORM-based knowledge graph.
         
         Args:
             config: Configuration dictionary with FalkorDB, Graphiti, and other settings
+            security_context: Optional security context for data-level filtering
         """
         self.config = config
+        self.security_context = security_context
         
         # Initialize FalkorDB connection
         self.client = falkordb.FalkorDB(
@@ -45,10 +50,31 @@ class ORMKnowledgeGraph:
         )
         self.graph = self.client.select_graph(config['falkordb']['graph_name'])
         
-        # Initialize repositories
-        self.geography_repo = GeographyRepository(self.graph, Geography)
-        self.commodity_repo = CommodityRepository(self.graph, Commodity)
-        self.balance_sheet_repo = BalanceSheetRepository(self.graph, BalanceSheet)
+        # Set graph on security context if provided
+        # IMPORTANT: Do NOT overwrite if the context already points to the RBAC graph.
+        # Only attach the data graph when no graph was set (e.g., programmatic usage).
+        if security_context and security_context.graph is None:
+            security_context.graph = self.graph
+        
+        # Initialize security policy
+        self.security_policy = None
+        if security_context and not security_context.is_superuser:
+            try:
+                self.security_policy = PolicyManager.initialize_policy(self.graph)
+                logger.info("Security policy initialized")
+            except Exception as e:
+                logger.warning(f"Security policy initialization failed: {e}")
+        
+        # Initialize repositories (with security if context provided)
+        self.geography_repo = create_secure_repository(
+            GeographyRepository, self.graph, Geography, security_context
+        )
+        self.commodity_repo = create_secure_repository(
+            CommodityRepository, self.graph, Commodity, security_context
+        )
+        self.balance_sheet_repo = create_secure_repository(
+            BalanceSheetRepository, self.graph, BalanceSheet, security_context
+        )
         
         # Initialize other components (keep existing)
         self.graphiti = GraphitiEngine(config['graphiti'])
@@ -246,11 +272,23 @@ class ORMKnowledgeGraph:
     
     def execute_query(self, query: str, parameters: Optional[Dict] = None) -> List[Dict]:
         """
-        Execute raw Cypher query (for backward compatibility).
+        Execute raw Cypher query with security filtering applied.
+        
+        The query will be automatically filtered based on the user's permissions.
+        Superusers bypass all filtering.
         
         Note: Prefer using repositories where possible.
         """
-        result = self.graph.query(query, parameters or {})
+        params = parameters or {}
+        rewritten_query = query
+        
+        # Apply security filtering if not superuser
+        if self.security_context and not self.security_context.is_superuser:
+            from ..security.query_rewriter_enhanced import EnhancedQueryRewriter
+            rewriter = EnhancedQueryRewriter(self.security_context)
+            rewritten_query, params = rewriter.rewrite(query, params)
+        
+        result = self.graph.query(rewritten_query, params)
         results = []
         
         column_names = [header_item[1] if isinstance(header_item, list) else header_item 

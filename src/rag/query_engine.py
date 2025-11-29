@@ -32,16 +32,13 @@ class QueryEngine:
         self.graphiti = graphiti
         self.config = config
         
-        # Initialize ORM repositories
-        from ..models.commodity import Commodity
-        from ..models.geography import Geography
-        from ..models.balance_sheet import BalanceSheet
-        from ..models.production_area import ProductionArea
-        
-        self.commodity_repo = CommodityRepository(falkordb.graph, Commodity)
-        self.geography_repo = GeographyRepository(falkordb.graph, Geography)
-        self.balance_sheet_repo = BalanceSheetRepository(falkordb.graph, BalanceSheet)
-        self.production_area_repo = ProductionAreaRepository(falkordb.graph, ProductionArea)
+        # Use ORM repositories from parent KnowledgeGraph (these are already security-aware)
+        # This ensures QueryEngine respects data-level filtering
+        self.commodity_repo = falkordb.commodity_repo
+        self.geography_repo = falkordb.geography_repo
+        self.balance_sheet_repo = falkordb.balance_sheet_repo
+        # production_area_repo may not exist in all deployments
+        self.production_area_repo = getattr(falkordb, 'production_area_repo', None)
         
         # Initialize LLM (optional - requires API key)
         try:
@@ -80,6 +77,84 @@ Context:
         
         logger.info("Query engine initialized")
     
+    def _get_denied_entity_names(self, entity_label: str = 'Geography') -> List[str]:
+        """Get list of denied entity names based on security filters."""
+        denied_names = []
+        
+        # Check if security context exists and get row filters
+        if not self.falkordb.security_context or self.falkordb.security_context.is_superuser:
+            return []  # No filtering for superusers
+        
+        try:
+            # Get row filters for the entity label
+            row_filters = self.falkordb.security_context.get_row_filters(entity_label, 'read')
+            
+            # Parse filters to extract denied entity names
+            # Format: "NOT (name = 'France')" -> extract 'France'
+            import re
+            for filter_cond in row_filters:
+                # Match patterns like: NOT (name = 'EntityName') or NOT (g.name = 'EntityName')
+                matches = re.findall(r"NOT\s*\([^=]+=\s*'([^']+)'\)", filter_cond, re.IGNORECASE)
+                denied_names.extend(matches)
+            
+            if denied_names:
+                logger.info(f"Denied entity names for {entity_label}: {denied_names}")
+        except Exception as e:
+            logger.warning(f"Failed to extract denied entity names: {e}")
+        
+        return denied_names
+    
+    def _filter_graphiti_results(self, results: List, denied_names: List[str]) -> List:
+        """Filter Graphiti results to remove denied entities."""
+        if not denied_names:
+            return results
+        
+        filtered = []
+        for result in results:
+            # Check if result mentions any denied entity
+            result_text = ''
+            if hasattr(result, 'name'):
+                result_text += str(getattr(result, 'name', '')) + ' '
+            if hasattr(result, 'summary'):
+                result_text += str(getattr(result, 'summary', '')) + ' '
+            if hasattr(result, 'fact'):
+                result_text += str(getattr(result, 'fact', '')) + ' '
+            if hasattr(result, 'content'):
+                result_text += str(getattr(result, 'content', '')) + ' '
+            
+            # Check if any denied name appears in the result text
+            contains_denied = any(denied_name.lower() in result_text.lower() 
+                                 for denied_name in denied_names)
+            
+            if not contains_denied:
+                filtered.append(result)
+            else:
+                logger.debug(f"Filtered out Graphiti result mentioning denied entity")
+        
+        logger.info(f"Filtered Graphiti results: {len(results)} -> {len(filtered)}")
+        return filtered
+    
+    def _filter_context_text(self, context_text: str, denied_names: List[str]) -> str:
+        """Remove sentences mentioning denied entities from context text."""
+        if not denied_names or not context_text:
+            return context_text
+        
+        # Split into sentences
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', context_text)
+        
+        filtered_sentences = []
+        for sentence in sentences:
+            # Check if sentence mentions any denied entity
+            contains_denied = any(denied_name.lower() in sentence.lower() 
+                                 for denied_name in denied_names)
+            if not contains_denied:
+                filtered_sentences.append(sentence)
+        
+        filtered_text = ' '.join(filtered_sentences)
+        logger.info(f"Filtered context text: {len(context_text)} -> {len(filtered_text)} chars")
+        return filtered_text
+    
     async def process_query(
         self,
         question: str,
@@ -108,6 +183,9 @@ Context:
                 all_entities.append(ge['name'])
         all_entities = list(set(all_entities))  # Deduplicate
         
+        # Get denied entity names for post-filtering
+        denied_geography_names = self._get_denied_entity_names('Geography')
+        
         # Step 3: First search using Graphiti for semantic results
         graphiti_results = []
         if self.graphiti and self.graphiti.is_ready():
@@ -117,8 +195,9 @@ Context:
                     query=question,
                     num_results=10
                 )
-                graphiti_results = search_results
-                logger.info(f"Graphiti search found {len(graphiti_results)} semantic matches")
+                # Apply post-filtering to remove denied entities
+                graphiti_results = self._filter_graphiti_results(search_results, denied_geography_names)
+                logger.info(f"Graphiti search found {len(graphiti_results)} semantic matches (after filtering)")
             except Exception as e:
                 logger.warning(f"Graphiti search failed: {e}")
         
@@ -149,8 +228,8 @@ Context:
                             "labels": ["Commodity"]
                         })
                 
-                # Query 3: Search for trade flows using ORM repository method
-                # Note: find_trade_flows_by_geography returns raw results with relationship data
+                # Query 3: Search for trade flows
+                # Use falkordb's execute_cypher which respects security context
                 try:
                     cypher = """
                     MATCH (g1:Geography)-[t:TRADES_WITH]->(g2:Geography)
@@ -158,32 +237,34 @@ Context:
                     RETURN g1.name as from, g2.name as to, t.commodity as commodity, t.flow_type as flow_type
                     LIMIT 5
                     """
-                    result = self.geography_repo.graph.query(cypher, {'search_term': entity})
-                    if result.result_set:
-                        logger.info(f"Found {len(result.result_set)} trade flow results for: {entity}")
-                        for row in result.result_set:
-                            # Extract values from result row [from, to, commodity, flow_type]
+                    # Use falkordb instance's method which applies security filtering
+                    results = self.falkordb.execute_query(cypher, {'search_term': entity})
+                    if results:
+                        logger.info(f"Found {len(results)} trade flow results for: {entity}")
+                        for row in results:
+                            # Extract values from result row dict
                             subgraph_data.append({
                                 "type": "TradeFlow",
-                                "from": row[0],
-                                "to": row[1],
-                                "commodity": row[2],
-                                "flow_type": row[3]
+                                "from": row.get('from'),
+                                "to": row.get('to'),
+                                "commodity": row.get('commodity'),
+                                "flow_type": row.get('flow_type')
                             })
                 except Exception as e:
                     logger.warning(f"Trade flow search failed: {e}")
                 
-                # Query 4: Search for production areas using ORM
-                production_areas = self.production_area_repo.search_case_insensitive(entity, limit=3)
-                if production_areas:
-                    logger.info(f"Found {len(production_areas)} production area results for: {entity}")
-                    for pa in production_areas:
-                        # Get commodity info via relationship
-                        subgraph_data.append({
-                            "type": "ProductionArea",
-                            "area_name": pa.name,
-                            "commodity": "N/A"  # Would need to eager load relationship
-                        })
+                # Query 4: Search for production areas using ORM (if available)
+                if self.production_area_repo:
+                    production_areas = self.production_area_repo.search_case_insensitive(entity, limit=3)
+                    if production_areas:
+                        logger.info(f"Found {len(production_areas)} production area results for: {entity}")
+                        for pa in production_areas:
+                            # Get commodity info via relationship
+                            subgraph_data.append({
+                                "type": "ProductionArea",
+                                "area_name": pa.name,
+                                "commodity": "N/A"  # Would need to eager load relationship
+                            })
                 
                 # Query 5: Search for balance sheets using ORM
                 balance_sheets = self.balance_sheet_repo.search_case_insensitive(entity, limit=3)
@@ -212,6 +293,14 @@ Context:
                     query=question,
                     max_context_items=self.config.get('retrieval_top_k', 10)
                 )
+                
+                # Apply post-filtering to context text to remove denied entity mentions
+                if 'context' in graph_context and graph_context['context']:
+                    graph_context['context'] = self._filter_context_text(
+                        graph_context['context'], 
+                        denied_geography_names
+                    )
+                
                 # Ensure graph_context has sources array
                 if 'sources' not in graph_context:
                     graph_context['sources'] = []
