@@ -7,7 +7,7 @@ from typing import Optional, List
 from datetime import datetime
 from falkordb_orm import (
     node, relationship, generated_id, property as orm_property,
-    unique, required
+    unique
 )
 
 
@@ -16,9 +16,9 @@ class User:
     """User entity with authentication and RBAC"""
     
     id: Optional[int] = generated_id()
-    username: str = unique(required=True)
-    email: str = orm_property(required=True)
-    password_hash: str = orm_property(required=True)  # Hashed password
+    username: str = unique()
+    email: str = orm_property()
+    password_hash: str = orm_property()  # Hashed password
     full_name: Optional[str] = orm_property()
     is_active: bool = orm_property(default=True)
     is_superuser: bool = orm_property(default=False)
@@ -34,7 +34,7 @@ class Role:
     """Role entity for grouping permissions"""
     
     id: Optional[int] = generated_id()
-    name: str = unique(required=True)
+    name: str = unique()
     description: Optional[str] = orm_property()
     is_system: bool = orm_property(default=False)  # System roles cannot be deleted
     created_at: datetime = orm_property(default_factory=datetime.now)
@@ -49,9 +49,9 @@ class Permission:
     """Permission entity for fine-grained access control"""
     
     id: Optional[int] = generated_id()
-    name: str = unique(required=True)
-    resource: str = orm_property(required=True)  # e.g., "analytics", "ingestion", "discovery"
-    action: str = orm_property(required=True)  # e.g., "read", "write", "execute", "admin"
+    name: str = unique()
+    resource: str = orm_property()  # e.g., "analytics", "ingestion", "discovery"
+    action: str = orm_property()  # e.g., "read", "write", "execute", "admin"
     description: Optional[str] = orm_property()
     scope: Optional[str] = orm_property()  # Optional scope filter (e.g., "commodity:wheat")
     created_at: datetime = orm_property(default_factory=datetime.now)
