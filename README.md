@@ -516,12 +516,151 @@ GET /stats
 - **Freshness**: Data reloaded November 7, 2024
 - **Confidence Scores**: 60-100% depending on query specificity
 
-## 🔐 Security Notes
+## 🔐 Security & RBAC
 
-- API runs on localhost by default
+### Authentication & Authorization
+
+The system implements comprehensive Role-Based Access Control (RBAC) with:
+
+#### Multi-Graph Architecture
+- **Data Graph** (`ldc_graph`/`tijara_graph`): Application data (commodities, trade flows)
+- **RBAC Graph** (`rbac_graph`): Security metadata (users, roles, permissions)
+- **Graphiti Graph** (`graphiti`): Semantic search embeddings
+
+#### Security Features
+
+**1. User Authentication**
+- JWT-based authentication
+- Password hashing with bcrypt
+- Token expiration and refresh
+- Login endpoint: `POST /auth/login`
+
+**2. Role-Based Access Control**
+- Hierarchical role system with inheritance
+- Built-in roles: `admin`, `analyst`, `trader`, `data_engineer`, `viewer`
+- Custom roles support
+- Role assignment per user
+
+**3. Fine-Grained Permissions**
+- **Resource-level**: Control access to nodes, edges, properties
+- **Action-level**: read, write, execute, traverse, admin
+- **Attribute-based**: Filter by node labels, properties, and conditions
+- **Grant/Deny model**: Explicit GRANT or DENY with deny-takes-precedence
+
+**4. Data-Level Filtering**
+- **Query Rewriting**: Automatically injects security filters into Cypher queries
+- **Row-level security**: Filter nodes based on user permissions
+- **Property-level security**: Hide sensitive properties from unauthorized users
+- **Post-filtering**: Filters Graphiti semantic search results
+
+**5. Admin Panel**
+- Web-based RBAC management at `/admin.html`
+- User management: Create, edit, deactivate users
+- Role management: Define roles and assign permissions
+- Permission management: CRUD operations on security policies
+- Role assignment: Inline role checkboxes in user edit modal
+
+#### RBAC Graph Schema
+
+```cypher
+# Users
+(u:User {username, password_hash, email, full_name, is_active, is_superuser})
+
+# Roles
+(r:Role {name, description, is_system})
+
+# Permissions
+(p:Permission {name, resource, action, description, grant_type, 
+               node_label, edge_type, property_name, 
+               property_filter, attribute_conditions})
+
+# Relationships
+(u)-[:HAS_ROLE]->(r)
+(r)-[:HAS_PERMISSION]->(p)
+```
+
+#### Permission Examples
+
+```python
+# Deny access to France geography nodes
+{
+  "name": "node:deny:france",
+  "resource": "node",
+  "action": "read",
+  "grant_type": "DENY",
+  "node_label": "Geography",
+  "property_filter": '{"name": "France"}'
+}
+
+# Deny access to Cotton commodity
+{
+  "name": "node:deny:cotton",
+  "resource": "node",
+  "action": "read",
+  "grant_type": "DENY",
+  "node_label": "Commodity",
+  "property_filter": '{"name": "Cotton"}'
+}
+
+# Deny access to confidential properties
+{
+  "name": "property:deny:confidential",
+  "resource": "property",
+  "action": "read",
+  "grant_type": "DENY",
+  "property_name": "confidential"
+}
+```
+
+#### Security Context Flow
+
+1. **Login**: User authenticates via `/auth/login`
+2. **Token**: JWT token issued with user ID and roles
+3. **Request**: API validates token and loads user's permissions
+4. **Security Context**: Created with user's effective permissions
+5. **Query Execution**: Queries automatically rewritten to enforce security
+6. **Response Filtering**: Results filtered based on permissions
+
+#### Query Rewriting Example
+
+**Original Query:**
+```cypher
+MATCH (g:Geography {level: 0}) RETURN g.name
+```
+
+**Rewritten Query (for restricted user):**
+```cypher
+MATCH (g:Geography {level: 0}) 
+WHERE (NOT (g.name = 'France'))
+RETURN g.name
+```
+
+#### Superuser Bypass
+
+- Superuser accounts bypass all security checks
+- Default admin account: `admin` / `admin123`
+- Useful for system administration and data management
+
+#### Configuration
+
+```yaml
+rbac:
+  host: localhost
+  port: 6379
+  graph_name: rbac_graph
+  
+security:
+  secret_key: "your-secret-key-here"  # JWT signing key
+  algorithm: "HS256"
+  access_token_expire_minutes: 1440    # 24 hours
+```
+
+#### API Security
+
+- All endpoints (except `/auth/login`, `/health`) require authentication
+- Admin endpoints require superuser privileges
+- CORS enabled for localhost origins
 - OpenAI API key required for Graphiti features
-- FalkorDB access configurable (default: no authentication)
-- CORS enabled for `localhost` origins
 
 ## 🐛 Troubleshooting
 
@@ -580,6 +719,6 @@ Built with:
 
 ---
 
-**Version**: 1.0.0 (LDC Production Release)  
-**Last Updated**: November 8, 2024  
-**Status**: ✅ Production Ready
+**Version**: 0.5.1 (RBAC Implementation)  
+**Last Updated**: November 30, 2024  
+**Status**: ✅ Production Ready with RBAC
