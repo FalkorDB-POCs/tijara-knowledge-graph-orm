@@ -141,12 +141,12 @@ RETURN g.name ORDER BY g.name
 
 ---
 
-#### Test 3.2: List All Commodities
+#### Test 3.2: List All Top-Level Commodities
 
 **Query**:
 ```cypher
 MATCH (c:Commodity)
-WHERE c.level = 2
+WHERE c.level = 0
 RETURN c.name ORDER BY c.name
 ```
 
@@ -154,8 +154,8 @@ RETURN c.name ORDER BY c.name
 
 | User | Commodities |
 |------|-------------|
-| **admin** | Coffee, Corn, **Cotton**, Wheat (4 commodities) |
-| **emma_restricted** | Coffee, Corn, Wheat (3 commodities, Cotton filtered) |
+| **admin** | Citrus, Cocoa, Coffee, **Cotton**, Grains, Oilseeds, Rice, Sugar (8 commodities) |
+| **emma_restricted** | Citrus, Cocoa, Coffee, Grains, Oilseeds, Rice, Sugar (7 commodities, Cotton filtered) |
 
 **Steps**:
 1. Enter the query in Cypher editor
@@ -165,6 +165,15 @@ RETURN c.name ORDER BY c.name
 **Verification**:
 - Admin sees Cotton in results
 - Emma does NOT see Cotton
+
+**Alternative Simple Query** (all commodities):
+```cypher
+MATCH (c:Commodity)
+RETURN c.name, c.level
+ORDER BY c.name
+```
+- Admin: Should see Cotton with level=0
+- Emma: Should NOT see Cotton in results
 
 ---
 
