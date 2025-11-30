@@ -123,7 +123,7 @@
     </div>
 
     <div class="modal" id="editUserModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h3>Edit User</h3>
                 <button class="modal-close" onclick="closeModal('editUserModal')">&times;</button>
@@ -148,6 +148,12 @@
                     <div class="checkbox-group">
                         <input type="checkbox" name="is_superuser" id="edit_is_superuser">
                         <label for="edit_is_superuser">Superuser</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Roles</label>
+                    <div id="editUserRoles" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; border-radius: 4px;">
+                        <!-- Role checkboxes will be loaded here -->
                     </div>
                 </div>
                 <div style="display: flex; gap: 1rem;">
@@ -212,18 +218,18 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div class="form-group">
                         <label>Node Label</label>
-                        <input type="text" class="form-control" id="edit_perm_node_label" list="editNodeLabelsDatalist" placeholder="e.g., Geography">
+                        <input type="text" class="form-control" id="edit_perm_node_label" list="editNodeLabelsDatalist" placeholder="e.g., Geography" autocomplete="off">
                         <datalist id="editNodeLabelsDatalist"></datalist>
                     </div>
                     <div class="form-group">
                         <label>Edge Type</label>
-                        <input type="text" class="form-control" id="edit_perm_edge_type" list="editEdgeTypesDatalist" placeholder="e.g., TRADES_WITH">
+                        <input type="text" class="form-control" id="edit_perm_edge_type" list="editEdgeTypesDatalist" placeholder="e.g., TRADES_WITH" autocomplete="off">
                         <datalist id="editEdgeTypesDatalist"></datalist>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>Property Name</label>
-                    <input type="text" class="form-control" id="edit_perm_property_name" list="editPropertiesDatalist" placeholder="e.g., price">
+                    <input type="text" class="form-control" id="edit_perm_property_name" list="editPropertiesDatalist" placeholder="e.g., price" autocomplete="off">
                     <datalist id="editPropertiesDatalist"></datalist>
                 </div>
                 <div class="form-group">
@@ -243,10 +249,6 @@
             </form>
         </div>
     </div>
-
-    <script src="static/js/admin.js"></script>
-</body>
-</html>
 
     <!-- Create Role Modal -->
     <div class="modal" id="createRoleModal">

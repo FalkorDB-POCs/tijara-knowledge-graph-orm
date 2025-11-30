@@ -1542,7 +1542,7 @@ async def get_schema_metadata(
     try:
         # Get all node labels from the application graph
         labels_query = "CALL db.labels()"
-        labels_result = kg.falkordb.graph.query(labels_query)
+        labels_result = kg.graph.query(labels_query)
         
         node_labels = []
         if labels_result.result_set:
@@ -1550,7 +1550,7 @@ async def get_schema_metadata(
         
         # Get all relationship types
         rels_query = "CALL db.relationshipTypes()"
-        rels_result = kg.falkordb.graph.query(rels_query)
+        rels_result = kg.graph.query(rels_query)
         
         edge_types = []
         if rels_result.result_set:
@@ -1565,7 +1565,7 @@ async def get_schema_metadata(
         RETURN DISTINCT key
         ORDER BY key
         """
-        props_result = kg.falkordb.graph.query(props_query)
+        props_result = kg.graph.query(props_query)
         
         properties = []
         if props_result.result_set:

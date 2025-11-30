@@ -5,6 +5,7 @@ console.log('[Admin.js] Loaded. API_BASE:', API_BASE);
 let allRoles = [];
 let allUsers = [];
 let allPermissions = [];
+let schemaMetadata = null;
 
 // Toast notifications
 function showToast(message, type = 'success') {
@@ -31,7 +32,15 @@ document.querySelectorAll('.tab-button').forEach(btn => {
 
 // Modal functions
 function openModal(modalId) {
-    document.getElementById(modalId).classList.add('active');
+    console.log('[openModal] Opening modal:', modalId);
+    const modal = document.getElementById(modalId);
+    console.log('[openModal] Modal element:', modal);
+    if (!modal) {
+        console.error('[openModal] Modal not found:', modalId);
+        return;
+    }
+    modal.classList.add('active');
+    console.log('[openModal] Modal classes after add:', modal.className);
 }
 
 function closeModal(modalId) {
@@ -218,6 +227,8 @@ async function loadPermissions() {
         `;
 
         data.permissions.forEach(perm => {
+            // Escape permission name for use in HTML attributes
+            const escapedName = perm.name.replace(/'/g, "\\'");
             html += `
                 <tr>
                     <td><strong>${perm.name}</strong></td>
@@ -226,10 +237,10 @@ async function loadPermissions() {
                     <td>${perm.description || '-'}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn btn-small btn-secondary" onclick="openEditPermissionModal('${perm.name}')">
+                            <button class="btn btn-small btn-secondary" onclick="openEditPermissionModal('${escapedName}')">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-small btn-danger" onclick="deletePermission('${perm.name}')">
+                            <button class="btn btn-small btn-danger" onclick="deletePermission('${escapedName}')">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -290,28 +301,70 @@ function openEditUserModal(username) {
     document.getElementById('edit_email').value = user.email || '';
     document.getElementById('edit_is_active').checked = user.is_active;
     document.getElementById('edit_is_superuser').checked = user.is_superuser;
+    
+    // Populate roles checkboxes
+    const rolesContainer = document.getElementById('editUserRoles');
+    rolesContainer.innerHTML = '';
+    allRoles.forEach(role => {
+        const isChecked = user.roles.includes(role.name);
+        rolesContainer.innerHTML += `
+            <div class="checkbox-group">
+                <input type="checkbox" name="role" value="${role.name}" id="edit_role_${role.name}" ${isChecked ? 'checked' : ''}>
+                <label for="edit_role_${role.name}">${role.name}</label>
+            </div>
+        `;
+    });
+    
     openModal('editUserModal');
 }
 
 async function updateUser(event) {
     event.preventDefault();
     const username = document.getElementById('edit_username').value;
+    const formData = new FormData(event.target);
+    
     const data = {
         full_name: document.getElementById('edit_full_name').value || null,
         email: document.getElementById('edit_email').value || null,
         is_active: document.getElementById('edit_is_active').checked,
         is_superuser: document.getElementById('edit_is_superuser').checked
     };
+    
+    // Get selected roles and current user roles
+    const selectedRoles = Array.from(formData.getAll('role'));
+    const user = allUsers.find(u => u.username === username);
+    const currentRoles = user ? user.roles : [];
 
     try {
+        // Update user basic info
         const response = await authenticatedFetch(`${API_BASE}/admin/users/${username}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
+        await response.json();
+        
+        // Find roles to add and remove
+        const toAdd = selectedRoles.filter(r => !currentRoles.includes(r));
+        const toRemove = currentRoles.filter(r => !selectedRoles.includes(r));
+        
+        // Add new roles
+        for (const roleName of toAdd) {
+            await authenticatedFetch(`${API_BASE}/admin/users/${username}/roles`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, role_name: roleName })
+            });
+        }
+        
+        // Remove roles
+        for (const roleName of toRemove) {
+            await authenticatedFetch(`${API_BASE}/admin/users/${username}/roles/${roleName}`, {
+                method: 'DELETE'
+            });
+        }
 
-        const result = await response.json();
-        showToast(result.message, 'success');
+        showToast('User updated successfully', 'success');
         closeModal('editUserModal');
         loadUsers();
     } catch (error) {
@@ -546,14 +599,23 @@ async function deleteRole(roleName) {
 
 // ==================== Permission Management ====================
 
-let schemaMetadata = null;
-
 async function loadSchemaMetadata() {
     if (schemaMetadata) return schemaMetadata; // Cache it
     
     try {
         const response = await authenticatedFetch(`${API_BASE}/admin/schema-metadata`);
+        if (!response) {
+            console.error('Failed to load schema metadata: No response');
+            return { node_labels: [], edge_types: [], properties: [] };
+        }
+        if (!response.ok) {
+            console.error(`Failed to load schema metadata: HTTP ${response.status}`);
+            const errorText = await response.text().catch(() => 'Unable to read error');
+            console.error('Error details:', errorText);
+            return { node_labels: [], edge_types: [], properties: [] };
+        }
         schemaMetadata = await response.json();
+        console.log('[loadSchemaMetadata] Loaded:', schemaMetadata);
         return schemaMetadata;
     } catch (error) {
         console.error('Failed to load schema metadata:', error);
@@ -629,8 +691,14 @@ async function createPermission(event) {
 }
 
 async function openEditPermissionModal(permName) {
+    console.log('[openEditPermissionModal] Called with:', permName);
+    console.log('[openEditPermissionModal] allPermissions:', allPermissions);
     const perm = allPermissions.find(p => p.name === permName);
-    if (!perm) return;
+    console.log('[openEditPermissionModal] Found permission:', perm);
+    if (!perm) {
+        console.error('[openEditPermissionModal] Permission not found!');
+        return;
+    }
     
     // Load schema metadata and populate datalists
     const schema = await loadSchemaMetadata();
@@ -661,13 +729,20 @@ async function openEditPermissionModal(permName) {
     document.getElementById('edit_perm_name').value = perm.name;
     document.getElementById('edit_perm_description').value = perm.description || '';
     document.getElementById('edit_perm_grant_type').value = perm.grant_type || 'GRANT';
-    document.getElementById('edit_perm_node_label').value = perm.node_label || '';
+    
+    // Clear and set node label to avoid browser autocomplete issues
+    const nodeLabelField = document.getElementById('edit_perm_node_label');
+    nodeLabelField.value = '';
+    nodeLabelField.value = perm.node_label || '';
+    
     document.getElementById('edit_perm_edge_type').value = perm.edge_type || '';
     document.getElementById('edit_perm_property_name').value = perm.property_name || '';
     document.getElementById('edit_perm_property_filter').value = perm.property_filter || '';
     document.getElementById('edit_perm_attribute_conditions').value = perm.attribute_conditions || '';
     
+    console.log('[openEditPermissionModal] About to open modal...');
     openModal('editPermissionModal');
+    console.log('[openEditPermissionModal] Modal opened');
 }
 
 async function updatePermission(event) {
